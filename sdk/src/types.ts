@@ -1,0 +1,29 @@
+export interface DidDocument {
+  id: string; // did:stellar:<address>
+  controller: string;
+  metadata: Record<string, string>;
+  createdAt: number;
+  updatedAt: number;
+  active: boolean;
+}
+
+export type CredentialType = "Kyc" | "Reputation" | "Achievement" | "Custom";
+
+export interface Credential {
+  id: string; // hex-encoded 32-byte hash
+  subject: string;
+  issuer: string;
+  credentialType: CredentialType;
+  claims: Record<string, string>;
+  signature: string; // hex
+  issuedAt: number;
+  expiresAt: number; // 0 = no expiry
+  revoked: boolean;
+}
+
+export interface SorobanIdentityConfig {
+  rpcUrl: string;
+  networkPassphrase: string;
+  identityRegistryId: string;
+  credentialManagerId: string;
+}

@@ -1,0 +1,122 @@
+import {
+  Contract,
+  SorobanRpc,
+  TransactionBuilder,
+  BASE_FEE,
+  Keypair,
+  nativeToScVal,
+  scValToNative,
+} from "@stellar/stellar-sdk";
+import type { SorobanIdentityConfig } from "./types";
+
+export interface ReputationRecord {
+  subject: string;
+  score: number;
+  reporterCount: number;
+  updatedAt: number;
+}
+
+export class ReputationClient {
+  private server: SorobanRpc.Server;
+  private contract: Contract;
+  private config: SorobanIdentityConfig & { reputationId: string };
+
+  constructor(config: SorobanIdentityConfig & { reputationId: string }) {
+    this.config = config;
+    this.server = new SorobanRpc.Server(config.rpcUrl);
+    this.contract = new Contract(config.reputationId);
+  }
+
+  /** Get the reputation record for a subject. */
+  async getReputation(callerAddress: string, subjectAddress: string): Promise<ReputationRecord> {
+    const account = await this.server.getAccount(callerAddress);
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call(
+          "get_reputation",
+          nativeToScVal(subjectAddress, { type: "address" })
+        )
+      )
+      .setTimeout(30)
+      .build();
+
+    const result = await this.server.simulateTransaction(tx);
+    if (SorobanRpc.Api.isSimulationError(result)) {
+      throw new Error(`Simulation failed: ${result.error}`);
+    }
+
+    return scValToNative(
+      (result as SorobanRpc.Api.SimulateTransactionSuccessResponse).result!.retval
+    ) as ReputationRecord;
+  }
+
+  /** Check if a subject passes the sybil threshold. */
+  async passesSybilCheck(
+    callerAddress: string,
+    subjectAddress: string,
+    minScore: number,
+    minReporters: number
+  ): Promise<boolean> {
+    const account = await this.server.getAccount(callerAddress);
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call(
+          "passes_sybil_check",
+          nativeToScVal(subjectAddress, { type: "address" }),
+          nativeToScVal(minScore, { type: "i64" }),
+          nativeToScVal(minReporters, { type: "u32" })
+        )
+      )
+      .setTimeout(30)
+      .build();
+
+    const result = await this.server.simulateTransaction(tx);
+    if (SorobanRpc.Api.isSimulationError(result)) return false;
+
+    return scValToNative(
+      (result as SorobanRpc.Api.SimulateTransactionSuccessResponse).result!.retval
+    ) as boolean;
+  }
+
+  /** Submit a score delta. Caller must be a registered reporter. */
+  async submitScore(
+    reporterKeypair: Keypair,
+    subjectAddress: string,
+    delta: number,
+    reason: string
+  ): Promise<void> {
+    const account = await this.server.getAccount(reporterKeypair.publicKey());
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call(
+          "submit_score",
+          nativeToScVal(reporterKeypair.publicKey(), { type: "address" }),
+          nativeToScVal(subjectAddress, { type: "address" }),
+          nativeToScVal(delta, { type: "i64" }),
+          nativeToScVal(reason, { type: "string" })
+        )
+      )
+      .setTimeout(30)
+      .build();
+
+    const prepared = await this.server.prepareTransaction(tx);
+    prepared.sign(reporterKeypair);
+
+    const result = await this.server.sendTransaction(prepared);
+    if (result.status !== "PENDING") {
+      throw new Error(`Transaction failed: ${result.status}`);
+    }
+  }
+}

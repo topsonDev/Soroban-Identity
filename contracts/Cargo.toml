@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "identity-registry",
+    "credential-manager",
+    "reputation",
+]
+resolver = "2"

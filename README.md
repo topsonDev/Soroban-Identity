@@ -1,0 +1,250 @@
+# Soroban Identity
+
+> **Decentralized Identity for a Trustless World.**
+
+Soroban Identity is a decentralized identity (DID) and credential management protocol built on [Soroban](https://soroban.stellar.org/) — the smart contract platform of the Stellar network. It enables users to create, own, and manage verifiable on-chain identities linked to their wallets, while allowing applications to securely verify credentials without exposing sensitive data.
+
+---
+
+## Why Soroban Identity?
+
+In the current Web3 ecosystem:
+
+- Users lack persistent, verifiable identities
+- Reputation is fragmented across platforms
+- Compliance (KYC/AML) is difficult to implement in a decentralized way
+- Sensitive user data is overexposed or centrally stored
+
+Soroban Identity fixes this by providing a **privacy-preserving identity layer** that any dApp on Stellar can plug into.
+
+---
+
+## Core Features
+
+**Decentralized Identity (DID)**
+- Wallet-linked identity profiles using the `did:stellar:` method
+- Unique on-chain identifiers, W3C DID-compatible
+- Portable across multiple dApps
+
+**Verifiable Credentials**
+- KYC verification badges issued by trusted entities
+- Proof of reputation, activity, or achievements
+- Cryptographic attestations stored on-chain
+
+**Privacy-Preserving Verification**
+- Selective disclosure of identity data
+- Permission-based access to credentials
+- Zero-knowledge proof (ZKP) integration — future-ready
+
+**Reputation Layer**
+- On-chain activity scoring via trusted reporters
+- Anti-sybil mechanisms with configurable thresholds
+- Trust signals for marketplaces, DAOs, and DeFi
+
+---
+
+## Repo Structure
+
+```
+soroban-identity/
+├── contracts/
+│   ├── identity-registry/     # DID creation, update, deactivation, resolution
+│   ├── credential-manager/    # Issue, verify, and revoke verifiable credentials
+│   └── reputation/            # On-chain scoring and anti-sybil checks
+├── frontend/                  # React + TypeScript dApp (Vite)
+├── sdk/                       # TypeScript SDK for dApp integration
+├── scripts/
+│   └── deploy.sh              # Build + deploy all contracts to testnet
+└── docs/
+    └── architecture.md        # Protocol architecture deep-dive
+```
+
+---
+
+## Smart Contracts
+
+### `identity-registry`
+
+Manages W3C-aligned DID documents on-chain.
+
+| Function | Description |
+|---|---|
+| `initialize(admin)` | One-time setup |
+| `create_did(controller, metadata)` | Mint a new DID for a wallet |
+| `update_did(controller, metadata)` | Update DID metadata |
+| `deactivate_did(controller)` | Soft-delete a DID |
+| `resolve_did(controller)` | Fetch a full DID document |
+| `has_active_did(controller)` | Boolean active check |
+
+### `credential-manager`
+
+Issues and verifies verifiable credentials.
+
+| Function | Description |
+|---|---|
+| `initialize(admin)` | One-time setup |
+| `add_issuer(issuer)` | Register a trusted issuer (admin only) |
+| `remove_issuer(issuer)` | Remove an issuer (admin only) |
+| `issue_credential(issuer, subject, type, claims, sig, expires)` | Issue a credential |
+| `revoke_credential(issuer, id)` | Revoke a credential |
+| `verify_credential(id)` | Check if a credential is valid and not expired |
+| `get_credential(id)` | Fetch full credential data |
+
+### `reputation`
+
+On-chain activity scoring and anti-sybil layer.
+
+| Function | Description |
+|---|---|
+| `initialize(admin)` | One-time setup |
+| `add_reporter(reporter)` | Register a trusted reporter (admin only) |
+| `submit_score(reporter, subject, delta, reason)` | Submit a score delta |
+| `get_reputation(subject)` | Get aggregated reputation record |
+| `get_history(subject, reporter)` | Get score history from a reporter |
+| `passes_sybil_check(subject, min_score, min_reporters)` | Anti-sybil gate |
+
+---
+
+## DID Format
+
+```
+did:stellar:<bech32-stellar-address>
+```
+
+Example:
+```
+did:stellar:GABC1234XYZ...
+```
+
+This is W3C DID-compatible and portable across any dApp that integrates the SDK.
+
+---
+
+## Credential Flow
+
+```
+Issuer                    Subject                  Verifier
+  │                          │                         │
+  │─── issue_credential ────▶│                         │
+  │                          │──── present cred id ───▶│
+  │                          │                         │─── verify_credential
+  │                          │                         │◀── true / false
+```
+
+---
+
+## TypeScript SDK
+
+Install:
+```bash
+cd sdk && npm install
+```
+
+Usage:
+```ts
+import { IdentityClient, CredentialClient, ReputationClient, TESTNET_CONFIG } from "@soroban-identity/sdk";
+
+const config = {
+  ...TESTNET_CONFIG,
+  identityRegistryId: "YOUR_REGISTRY_CONTRACT_ID",
+  credentialManagerId: "YOUR_CREDENTIAL_CONTRACT_ID",
+  reputationId: "YOUR_REPUTATION_CONTRACT_ID",
+};
+
+// Resolve a DID
+const identity = new IdentityClient(config);
+const doc = await identity.resolveDid("GABC...");
+
+// Verify a credential
+const credentials = new CredentialClient(config);
+const valid = await credentials.verifyCredential("GABC...", "credential-id-hex");
+
+// Check reputation / anti-sybil
+const reputation = new ReputationClient(config);
+const passes = await reputation.passesSybilCheck("GABC...", "GSUBJECT...", 50, 2);
+```
+
+---
+
+## Frontend
+
+React + Vite dApp with Freighter wallet integration.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Features:
+- Connect Freighter wallet
+- Resolve any DID by Stellar address
+- Create your own on-chain DID
+- Verify credentials by ID
+- Issue credentials (registered issuers)
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- [Rust](https://rustup.rs/) + `wasm32-unknown-unknown` target
+- [Stellar CLI](https://developers.stellar.org/docs/tools/developer-tools/cli/stellar-cli)
+- Node.js 18+
+- [Freighter Wallet](https://freighter.app) browser extension
+
+```bash
+# 1. Install Rust wasm target
+rustup target add wasm32-unknown-unknown
+
+# 2. Build all contracts
+cd contracts && cargo build --target wasm32-unknown-unknown --release
+
+# 3. Deploy to testnet (set your secret key first)
+export STELLAR_SECRET_KEY=S...
+bash scripts/deploy.sh
+
+# 4. Install and run the frontend
+cd frontend && npm install && npm run dev
+
+# 5. Install and build the SDK
+cd sdk && npm install && npm run build
+```
+
+---
+
+## Use Cases
+
+- **KYC verification** for DeFi and financial applications on Stellar
+- **Reputation systems** for marketplaces (e.g. Stellar Mart)
+- **DAO governance** — voting eligibility based on verified identity
+- **Access control** for exclusive communities or gated services
+- **Anti-sybil protection** for airdrops and incentive programs
+
+---
+
+## Roadmap
+
+- [x] DID registry contract
+- [x] Verifiable credential issuance & revocation
+- [x] Reputation scoring + anti-sybil
+- [x] TypeScript SDK
+- [x] React frontend with Freighter integration
+- [ ] Full ZKP selective disclosure
+- [ ] Cross-chain identity interoperability
+- [ ] Mobile identity wallet
+- [ ] Identity-based credit scoring
+- [ ] Integration with Stellar subscription and payment systems
+
+---
+
+## Contributing
+
+PRs are welcome. Please open an issue first to discuss what you'd like to change.
+
+---
+
+## License
+
+MIT — built on [Stellar](https://stellar.org) / [Soroban](https://soroban.stellar.org).
