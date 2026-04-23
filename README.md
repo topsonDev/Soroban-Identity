@@ -256,7 +256,7 @@ cd sdk && npm install && npm run build
 
 ## Contributing
 
-PRs are welcome. Please open an issue first to discuss what you'd like to change.
+PRs are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for branch naming, commit style, local setup, and the PR checklist.
 
 ---
 
