@@ -1,13 +1,11 @@
 import {
   Contract,
-  Networks,
   SorobanRpc,
   TransactionBuilder,
   BASE_FEE,
   Keypair,
   nativeToScVal,
   scValToNative,
-  xdr,
 } from "@stellar/stellar-sdk";
 import type { DidDocument, SorobanIdentityConfig } from "./types";
 

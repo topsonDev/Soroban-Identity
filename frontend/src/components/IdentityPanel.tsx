@@ -1,5 +1,6 @@
-import { useState } from "react";
-import type { WalletState } from "../hooks/useWallet";
+import { useState } from 'react';
+import type { WalletState } from '../hooks/useWallet';
+import type { ReputationRecord } from '../../../sdk/src/reputation';
 
 interface Props {
   wallet: WalletState & {
@@ -9,9 +10,11 @@ interface Props {
 }
 
 export default function IdentityPanel({ wallet }: Props) {
-  const [resolveAddress, setResolveAddress] = useState("");
+  const [resolveAddress, setResolveAddress] = useState('');
   const [resolveResult, setResolveResult] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [reputation, setReputation] = useState<ReputationRecord | null>(null);
+  const [reputationLoading, setReputationLoading] = useState(false);
 
   const [createResult, setCreateResult] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -28,6 +31,7 @@ export default function IdentityPanel({ wallet }: Props) {
     if (!resolveAddress.trim()) return;
     setResolving(true);
     setResolveResult(null);
+    setReputation(null);
     setSybilResult(null);
     try {
       // TODO: wire IdentityClient.resolveDid() from SDK
@@ -41,6 +45,24 @@ export default function IdentityPanel({ wallet }: Props) {
         active: true,
       };
       setResolveResult(JSON.stringify(mock, null, 2));
+
+      // Fetch reputation alongside DID resolution
+      setReputationLoading(true);
+      try {
+        // TODO: wire ReputationClient.getReputation() from SDK
+        await new Promise((r) => setTimeout(r, 600));
+        const mockRep: ReputationRecord = {
+          subject: resolveAddress,
+          score: 42,
+          reporterCount: 3,
+          updatedAt: Math.floor(Date.now() / 1000),
+        };
+        setReputation(mockRep);
+      } catch {
+        setReputation(null);
+      } finally {
+        setReputationLoading(false);
+      }
       setResolvedAddress(resolveAddress.trim());
     } catch (e: unknown) {
       setResolveResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
@@ -92,9 +114,42 @@ export default function IdentityPanel({ wallet }: Props) {
           onChange={(e) => setResolveAddress(e.target.value)}
         />
         <button onClick={handleResolve} disabled={resolving || !resolveAddress}>
-          {resolving ? "Resolving…" : "Resolve"}
+          {resolving ? 'Resolving…' : 'Resolve'}
         </button>
         {resolveResult && <pre className="result">{resolveResult}</pre>}
+
+        {reputationLoading && (
+          <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: '1rem' }}>
+            Loading reputation…
+          </p>
+        )}
+
+        {!reputationLoading && reputation && (
+          <div
+            className="card"
+            style={{ marginTop: '1rem', background: '#1e1b4b', border: '1px solid #4c1d95' }}
+          >
+            <h3 style={{ marginBottom: '0.5rem', color: '#a78bfa' }}>Reputation</h3>
+            <p>Score: {reputation.score}</p>
+            <p>Reporters: {reputation.reporterCount}</p>
+            <p>
+              Last updated:{' '}
+              {new Date(reputation.updatedAt * 1000).toLocaleDateString()}
+            </p>
+          </div>
+        )}
+
+        {!reputationLoading && resolveResult && !reputation && (
+          <div
+            className="card"
+            style={{ marginTop: '1rem', background: '#1e1b4b', border: '1px solid #334155' }}
+          >
+            <h3 style={{ marginBottom: '0.5rem', color: '#94a3b8' }}>Reputation</h3>
+            <p style={{ color: '#64748b', fontSize: '0.85rem' }}>
+              No reputation record found for this address.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -164,18 +219,18 @@ export default function IdentityPanel({ wallet }: Props) {
         <h2>Create DID</h2>
         {wallet.connected && wallet.publicKey ? (
           <>
-            <p style={{ color: "#94a3b8", fontSize: "0.85rem", marginBottom: "1rem" }}>
-              Connected as{" "}
-              <span style={{ color: "#a78bfa" }}>
+            <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '1rem' }}>
+              Connected as{' '}
+              <span style={{ color: '#a78bfa' }}>
                 {wallet.publicKey.slice(0, 6)}…{wallet.publicKey.slice(-4)}
               </span>
             </p>
             <button onClick={handleCreate} disabled={creating}>
-              {creating ? "Creating…" : "Create DID"}
+              {creating ? 'Creating…' : 'Create DID'}
             </button>
           </>
         ) : (
-          <p style={{ color: "#94a3b8", fontSize: "0.85rem" }}>
+          <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
             Connect your Freighter wallet to create a new on-chain DID.
           </p>
         )}
