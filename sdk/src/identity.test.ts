@@ -109,4 +109,51 @@ describe('IdentityClient', () => {
 
     expect(result).toBe(false);
   });
+
+  describe('deactivateDid', () => {
+    it('deactivates an active DID successfully', async () => {
+      // hasActiveDid returns true
+      mockIsSimulationError.mockReturnValue(false);
+      mockSimulateTransaction.mockResolvedValue({ result: { retval: true } });
+
+      const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
+      await expect(client.deactivateDid(keypair)).resolves.toBeUndefined();
+    });
+
+    it('throws when DID is already inactive', async () => {
+      // hasActiveDid returns false
+      mockIsSimulationError.mockReturnValue(true);
+      mockSimulateTransaction.mockResolvedValue({ error: 'No DID' });
+
+      const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
+      await expect(client.deactivateDid(keypair)).rejects.toThrow(
+        'already inactive or does not exist'
+      );
+    });
+
+    it('throws when transaction is rejected by the network', async () => {
+      // hasActiveDid returns true
+      mockIsSimulationError.mockReturnValue(false);
+      mockSimulateTransaction.mockResolvedValue({ result: { retval: true } });
+
+      // sendTransaction returns ERROR status
+      const { SorobanRpc } = await import('@stellar/stellar-sdk');
+      (SorobanRpc.Server as any).mockImplementationOnce(() => ({
+        getAccount: vi.fn().mockResolvedValue({ id: 'GABC', sequence: '0' }),
+        simulateTransaction: mockSimulateTransaction,
+        prepareTransaction: vi.fn().mockImplementation((tx) => tx),
+        sendTransaction: vi.fn().mockResolvedValue({ status: 'ERROR' }),
+        getTransaction: vi.fn(),
+      }));
+
+      const freshClient = new IdentityClient(config);
+      // re-mock simulate for hasActiveDid inside freshClient
+      mockSimulateTransaction.mockResolvedValue({ result: { retval: true } });
+
+      const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
+      await expect(freshClient.deactivateDid(keypair)).rejects.toThrow(
+        'Transaction failed'
+      );
+    });
+  });
 });
