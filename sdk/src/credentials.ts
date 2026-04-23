@@ -171,6 +171,51 @@ export class CredentialClient {
   }
 
   /**
+   * Get all credentials issued to a subject address.
+   */
+  async getCredentialsBySubject(
+    callerAddress: string,
+    subjectAddress: string
+  ): Promise<Credential[]> {
+    const account = await this.server.getAccount(callerAddress);
+
+    // Fetch the list of credential IDs for the subject
+    const idsTx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call(
+          "get_subject_credentials",
+          nativeToScVal(subjectAddress, { type: "address" })
+        )
+      )
+      .setTimeout(this.config.txTimeout ?? 30)
+      .build();
+
+    const idsResult = await this.server.simulateTransaction(idsTx);
+    if (SorobanRpc.Api.isSimulationError(idsResult)) {
+      throw new Error(`Simulation failed: ${idsResult.error}`);
+    }
+
+    const ids = scValToNative(
+      (idsResult as SorobanRpc.Api.SimulateTransactionSuccessResponse)
+        .result!.retval
+    ) as Uint8Array[];
+
+    if (!ids || ids.length === 0) return [];
+
+    // Resolve each credential by ID
+    const credentials = await Promise.all(
+      ids.map((raw) =>
+        this.getCredential(callerAddress, Buffer.from(raw).toString("hex"))
+      )
+    );
+
+    return credentials;
+  }
+
+  /**
    * Get a credential by ID.
    */
   async getCredential(
