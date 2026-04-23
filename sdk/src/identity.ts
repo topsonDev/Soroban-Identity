@@ -53,7 +53,18 @@ export class IdentityClient {
       throw new Error(`Transaction failed: ${result.status}`);
     }
 
-    const confirmed = await this.waitForConfirmation(result.hash);
+    let confirmed: SorobanRpc.Api.GetSuccessfulTransactionResponse;
+    try {
+      confirmed = await this.waitForConfirmation(result.hash);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("DID already exists")) {
+        throw new Error(
+          `A DID already exists for address ${keypair.publicKey()}. Each address can only have one DID.`
+        );
+      }
+      throw e;
+    }
     return scValToNative(confirmed.returnValue!) as string;
   }
 

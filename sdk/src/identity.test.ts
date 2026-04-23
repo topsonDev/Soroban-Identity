@@ -111,37 +111,28 @@ describe('IdentityClient', () => {
     expect(result).toBe(false);
   });
 
-  it('updateDid — happy path resolves without error', async () => {
-    (client as any).waitForConfirmation = vi.fn().mockResolvedValue({});
+  it('createDid — happy path returns the new DID string', async () => {
+    // Bypass the real 2s polling delay
+    (client as any).waitForConfirmation = vi.fn().mockResolvedValue({
+      returnValue: 'did:stellar:GABC',
+    });
 
     const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
 
-    await expect(
-      client.updateDid(keypair, { service: 'https://example.com' })
-    ).resolves.toBeUndefined();
+    const result = await client.createDid(keypair, { service: 'https://example.com' });
+
+    expect(result).toBe('did:stellar:GABC');
   });
 
-  it('updateDid — throws descriptive error when DID not found', async () => {
+  it('createDid — throws descriptive error when DID already exists', async () => {
     (client as any).waitForConfirmation = vi.fn().mockRejectedValue(
-      new Error('DID not found')
+      new Error('DID already exists for this address')
     );
 
     const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
 
-    await expect(client.updateDid(keypair, {})).rejects.toThrow(
-      'No DID found for address GABC'
-    );
-  });
-
-  it('updateDid — throws descriptive error when caller is not the controller', async () => {
-    (client as any).waitForConfirmation = vi.fn().mockRejectedValue(
-      new Error('require_auth failed')
-    );
-
-    const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
-
-    await expect(client.updateDid(keypair, {})).rejects.toThrow(
-      'is not the controller'
+    await expect(client.createDid(keypair)).rejects.toThrow(
+      'A DID already exists for address GABC'
     );
   });
 });
