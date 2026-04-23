@@ -1,0 +1,53 @@
+name: Contracts CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-test:
+    name: Build & Test Soroban Contracts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust toolchain and Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            Soroban-Identity/contracts/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Soroban-Identity/contracts/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build all contracts (wasm32)
+        working-directory: Soroban-Identity/contracts
+        run: cargo build --target wasm32-unknown-unknown --release
+
+      - name: Test identity-registry
+        working-directory: Soroban-Identity/contracts/identity-registry
+        run: cargo test
+
+      - name: Test credential-manager
+        working-directory: Soroban-Identity/contracts/credential-manager
+        run: cargo test
+
+      - name: Test reputation
+        working-directory: Soroban-Identity/contracts/reputation
+        run: cargo test
