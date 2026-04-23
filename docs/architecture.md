@@ -76,3 +76,88 @@ Issuer                Subject               Verifier
 
 - `persistent` storage is used for DID documents and credentials (survives ledger expiry with TTL bumps)
 - `instance` storage is used for admin and issuer registry
+
+
+## Deployment
+
+### Prerequisites
+
+- [Stellar CLI](https://developers.stellar.org/docs/tools/developer-tools/cli/stellar-cli) installed
+- Rust toolchain with `wasm32-unknown-unknown` target: `rustup target add wasm32-unknown-unknown`
+
+### 1. Build Contracts
+
+```bash
+cargo build --target wasm32-unknown-unknown --release --manifest-path contracts/Cargo.toml
+```
+
+Compiled `.wasm` files will be in `contracts/target/wasm32-unknown-unknown/release/`.
+
+### 2. Deploy to Testnet
+
+```bash
+# Deploy identity-registry
+stellar contract deploy \
+  --wasm contracts/target/wasm32-unknown-unknown/release/identity_registry.wasm \
+  --source <SECRET_KEY> \
+  --network testnet
+
+# Deploy credential-manager
+stellar contract deploy \
+  --wasm contracts/target/wasm32-unknown-unknown/release/credential_manager.wasm \
+  --source <SECRET_KEY> \
+  --network testnet
+```
+
+Each command prints a contract ID — save these for the next step.
+
+### 3. Initialize Contracts
+
+```bash
+# Initialize identity-registry
+stellar contract invoke \
+  --id <IDENTITY_REGISTRY_CONTRACT_ID> \
+  --source <SECRET_KEY> \
+  --network testnet \
+  -- initialize \
+  --admin <ADMIN_ADDRESS>
+
+# Initialize credential-manager
+stellar contract invoke \
+  --id <CREDENTIAL_MANAGER_CONTRACT_ID> \
+  --source <SECRET_KEY> \
+  --network testnet \
+  -- initialize \
+  --admin <ADMIN_ADDRESS>
+```
+
+### 4. Deploy to Mainnet
+
+Replace `--network testnet` with `--network mainnet` in all commands above. Mainnet requires funded accounts — use [Stellar Laboratory](https://laboratory.stellar.org) or an exchange to fund your deployer key.
+
+```bash
+stellar contract deploy \
+  --wasm contracts/target/wasm32-unknown-unknown/release/identity_registry.wasm \
+  --source <SECRET_KEY> \
+  --network mainnet
+```
+
+### 5. Configure the SDK
+
+Pass the deployed contract IDs to the SDK clients:
+
+```typescript
+import { IdentityClient } from '@soroban-identity/sdk';
+
+const client = new IdentityClient({
+  rpcUrl: 'https://soroban-testnet.stellar.org',       // or mainnet RPC
+  networkPassphrase: 'Test SDF Network ; September 2015', // or mainnet passphrase
+  identityRegistryId: '<IDENTITY_REGISTRY_CONTRACT_ID>',
+  credentialManagerId: '<CREDENTIAL_MANAGER_CONTRACT_ID>',
+});
+```
+
+### Reference
+
+- [Stellar CLI docs](https://developers.stellar.org/docs/tools/developer-tools/cli/stellar-cli)
+- [Soroban contract deployment guide](https://developers.stellar.org/docs/build/smart-contracts/getting-started/deploy-to-testnet)

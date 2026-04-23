@@ -1,86 +1,112 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { IdentityClient } from "./identity";
-import type { SorobanIdentityConfig } from "./types";
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { IdentityClient } from './identity';
+import type { SorobanIdentityConfig, DidDocument } from './types';
 
-// Mock @stellar/stellar-sdk so tests run without a live network
-vi.mock("@stellar/stellar-sdk", () => {
-  const mockSimResult = {
-    result: {
-      retval: {
-        id: "did:stellar:GABC",
-        controller: "GABC",
-        metadata: {},
-        createdAt: 1000,
-        updatedAt: 1000,
-        active: true,
-      },
-    },
-  };
+const { mockSimulateTransaction, mockIsSimulationError } = vi.hoisted(() => ({
+  mockSimulateTransaction: vi.fn(),
+  mockIsSimulationError: vi.fn(),
+}));
 
-  return {
-    SorobanRpc: {
-      Server: vi.fn().mockImplementation(() => ({
-        getAccount: vi.fn().mockResolvedValue({ id: "GABC", sequence: "0" }),
-        simulateTransaction: vi.fn().mockResolvedValue(mockSimResult),
-        prepareTransaction: vi.fn().mockImplementation((tx) => tx),
-        sendTransaction: vi.fn().mockResolvedValue({ status: "PENDING", hash: "abc123" }),
-        getTransaction: vi.fn().mockResolvedValue({
-          status: "SUCCESS",
-          returnValue: "did:stellar:GABC",
-        }),
-      })),
-      Api: {
-        isSimulationError: vi.fn().mockReturnValue(false),
-        GetTransactionStatus: { SUCCESS: "SUCCESS", FAILED: "FAILED" },
-      },
-    },
-    Contract: vi.fn().mockImplementation(() => ({
-      call: vi.fn().mockReturnValue({}),
-    })),
-    TransactionBuilder: vi.fn().mockImplementation(() => ({
-      addOperation: vi.fn().mockReturnThis(),
-      setTimeout: vi.fn().mockReturnThis(),
-      build: vi.fn().mockReturnValue({ sign: vi.fn() }),
-    })),
-    BASE_FEE: "100",
-    Keypair: {
-      fromSecret: vi.fn().mockReturnValue({
-        publicKey: () => "GABC",
-        sign: vi.fn().mockReturnValue(new Uint8Array(64)),
+vi.mock('@stellar/stellar-sdk', () => ({
+  SorobanRpc: {
+    Server: vi.fn().mockImplementation(() => ({
+      getAccount: vi.fn().mockResolvedValue({ id: 'GABC', sequence: '0' }),
+      simulateTransaction: mockSimulateTransaction,
+      prepareTransaction: vi.fn().mockImplementation((tx) => tx),
+      sendTransaction: vi
+        .fn()
+        .mockResolvedValue({ status: 'PENDING', hash: 'abc123' }),
+      getTransaction: vi.fn().mockResolvedValue({
+        status: 'SUCCESS',
+        returnValue: { id: 'did:stellar:GABC' },
       }),
+    })),
+    Api: {
+      isSimulationError: mockIsSimulationError,
+      GetTransactionStatus: { SUCCESS: 'SUCCESS', FAILED: 'FAILED' },
     },
-    nativeToScVal: vi.fn().mockReturnValue({}),
-    scValToNative: vi.fn().mockImplementation((v) => v),
-  };
-});
+  },
+  Contract: vi.fn().mockImplementation(() => ({
+    call: vi.fn().mockReturnValue({}),
+  })),
+  TransactionBuilder: vi.fn().mockImplementation(() => ({
+    addOperation: vi.fn().mockReturnThis(),
+    setTimeout: vi.fn().mockReturnThis(),
+    build: vi.fn().mockReturnValue({ sign: vi.fn() }),
+  })),
+  BASE_FEE: '100',
+  Keypair: {
+    fromSecret: vi.fn().mockReturnValue({
+      publicKey: () => 'GABC',
+    }),
+  },
+  nativeToScVal: vi.fn().mockReturnValue({}),
+  scValToNative: vi.fn().mockImplementation((v) => v),
+}));
 
 const config: SorobanIdentityConfig = {
-  rpcUrl: "https://soroban-testnet.stellar.org",
-  networkPassphrase: "Test SDF Network ; September 2015",
-  identityRegistryId: "CONTRACT_A",
-  credentialManagerId: "CONTRACT_B",
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+  networkPassphrase: 'Test SDF Network ; September 2015',
+  identityRegistryId: 'CONTRACT_A',
+  credentialManagerId: 'CONTRACT_B',
 };
 
-describe("IdentityClient", () => {
+describe('IdentityClient', () => {
   let client: IdentityClient;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     client = new IdentityClient(config);
   });
 
-  it("constructs without throwing", () => {
+  it('constructs without throwing', () => {
     expect(client).toBeDefined();
   });
 
-  it("hasActiveDid returns a boolean", async () => {
-    const result = await client.hasActiveDid("GABC");
-    expect(typeof result).toBe("boolean");
+  it('resolveDid — happy path returns a DidDocument', async () => {
+    const mockDidDoc: DidDocument = {
+      id: 'did:stellar:GABC',
+      controller: 'GABC',
+      metadata: {},
+      createdAt: 1000,
+      updatedAt: 1000,
+      active: true,
+    };
+
+    mockIsSimulationError.mockReturnValue(false);
+    mockSimulateTransaction.mockResolvedValue({
+      result: { retval: mockDidDoc },
+    });
+
+    const result = await client.resolveDid('GABC');
+
+    expect(result).toEqual(mockDidDoc);
   });
 
-  it("resolveDid returns a DID document shape", async () => {
-    const doc = await client.resolveDid("GABC");
-    expect(doc).toHaveProperty("id");
-    expect(doc).toHaveProperty("controller");
-    expect(doc).toHaveProperty("active");
+  it('resolveDid — throws when simulation fails', async () => {
+    mockIsSimulationError.mockReturnValue(true);
+    mockSimulateTransaction.mockResolvedValue({ error: 'Contract error' });
+
+    await expect(client.resolveDid('GABC')).rejects.toThrow('Simulation failed');
+  });
+
+  it('hasActiveDid — returns true for active DID', async () => {
+    mockIsSimulationError.mockReturnValue(false);
+    mockSimulateTransaction.mockResolvedValue({
+      result: { retval: true },
+    });
+
+    const result = await client.hasActiveDid('GABC');
+
+    expect(result).toBe(true);
+  });
+
+  it('hasActiveDid — returns false for inactive or missing DID', async () => {
+    mockIsSimulationError.mockReturnValue(true);
+    mockSimulateTransaction.mockResolvedValue({ error: 'No DID' });
+
+    const result = await client.hasActiveDid('GABC');
+
+    expect(result).toBe(false);
   });
 });
