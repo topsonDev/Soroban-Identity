@@ -142,14 +142,29 @@ cd sdk && npm install
 
 Usage:
 ```ts
-import { IdentityClient, CredentialClient, ReputationClient, TESTNET_CONFIG } from "@soroban-identity/sdk";
+import {
+  IdentityClient,
+  CredentialClient,
+  ReputationClient,
+  TESTNET_CONFIG,
+  MAINNET_CONFIG,
+} from "@soroban-identity/sdk";
 
+// Testnet — spread and override the three contract IDs after deployment
 const config = {
   ...TESTNET_CONFIG,
   identityRegistryId: "YOUR_REGISTRY_CONTRACT_ID",
   credentialManagerId: "YOUR_CREDENTIAL_CONTRACT_ID",
   reputationId: "YOUR_REPUTATION_CONTRACT_ID",
 };
+
+// Mainnet — same pattern, different base config
+// const config = {
+//   ...MAINNET_CONFIG,
+//   identityRegistryId: "YOUR_REGISTRY_CONTRACT_ID",
+//   credentialManagerId: "YOUR_CREDENTIAL_CONTRACT_ID",
+//   reputationId: "YOUR_REPUTATION_CONTRACT_ID",
+// };
 
 // Resolve a DID
 const identity = new IdentityClient(config);

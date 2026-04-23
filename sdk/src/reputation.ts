@@ -16,12 +16,19 @@ export interface ReputationRecord {
   updatedAt: number;
 }
 
+export interface ScoreHistoryEntry {
+  reporter: string;
+  delta: number;
+  reason: string;
+  submittedAt: number;
+}
+
 export class ReputationClient {
   private server: SorobanRpc.Server;
   private contract: Contract;
-  private config: SorobanIdentityConfig & { reputationId: string };
+  private config: SorobanIdentityConfig;
 
-  constructor(config: SorobanIdentityConfig & { reputationId: string }) {
+  constructor(config: SorobanIdentityConfig) {
     this.config = config;
     this.server = new SorobanRpc.Server(config.rpcUrl);
     this.contract = new Contract(config.reputationId);
@@ -52,6 +59,38 @@ export class ReputationClient {
     return scValToNative(
       (result as SorobanRpc.Api.SimulateTransactionSuccessResponse).result!.retval
     ) as ReputationRecord;
+  }
+
+  /** Get score submission history for a subject from a specific reporter. */
+  async getScoreHistory(
+    callerAddress: string,
+    subjectAddress: string,
+    reporterAddress: string
+  ): Promise<ScoreHistoryEntry[]> {
+    const account = await this.server.getAccount(callerAddress);
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call(
+          "get_history",
+          nativeToScVal(subjectAddress, { type: "address" }),
+          nativeToScVal(reporterAddress, { type: "address" })
+        )
+      )
+      .setTimeout(30)
+      .build();
+
+    const result = await this.server.simulateTransaction(tx);
+    if (SorobanRpc.Api.isSimulationError(result)) {
+      throw new Error(`Simulation failed: ${result.error}`);
+    }
+
+    return scValToNative(
+      (result as SorobanRpc.Api.SimulateTransactionSuccessResponse).result!.retval
+    ) as ScoreHistoryEntry[];
   }
 
   /** Check if a subject passes the sybil threshold. */

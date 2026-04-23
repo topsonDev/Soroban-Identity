@@ -26,4 +26,5 @@ export interface SorobanIdentityConfig {
   networkPassphrase: string;
   identityRegistryId: string;
   credentialManagerId: string;
+  reputationId: string;
 }
