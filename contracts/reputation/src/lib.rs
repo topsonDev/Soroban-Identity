@@ -147,16 +147,34 @@ impl Reputation {
     }
 
     /// Get score history submitted by a specific reporter for a subject.
+    ///
+    /// `offset` — number of entries to skip (0-based).
+    /// `limit`  — maximum number of entries to return (capped at 100).
     pub fn get_history(
         env: Env,
         subject: Address,
         reporter: Address,
+        offset: u32,
+        limit: u32,
     ) -> Vec<ScoreEntry> {
         let key = Self::history_key(&env, &subject, &reporter);
-        env.storage()
+        let all: Vec<ScoreEntry> = env
+            .storage()
             .persistent()
             .get(&key)
-            .unwrap_or_else(|| Vec::new(&env))
+            .unwrap_or_else(|| Vec::new(&env));
+
+        let cap: u32 = 100;
+        let effective_limit = if limit == 0 || limit > cap { cap } else { limit };
+        let len = all.len();
+        let start = offset.min(len);
+        let end = (start + effective_limit).min(len);
+
+        let mut page = Vec::new(&env);
+        for i in start..end {
+            page.push_back(all.get(i).unwrap());
+        }
+        page
     }
 
     /// Simple anti-sybil check: returns true if score >= threshold AND
@@ -240,6 +258,48 @@ mod tests {
         let rec = client.get_reputation(&subject);
         assert_eq!(rec.score, 75);
         assert_eq!(rec.reporter_count, 1); // same reporter
+    }
+
+    #[test]
+    fn test_get_history_pagination() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin    = Address::generate(&env);
+        let reporter = Address::generate(&env);
+        let subject  = Address::generate(&env);
+
+        client.initialize(&admin);
+        client.add_reporter(&reporter);
+
+        // Submit 5 entries
+        for i in 0..5_i64 {
+            let reason = String::from_str(&env, "reason");
+            client.submit_score(&reporter, &subject, &i, &reason);
+        }
+
+        // First page: offset=0, limit=2 → entries 0,1
+        let page1 = client.get_history(&subject, &reporter, &0, &2);
+        assert_eq!(page1.len(), 2);
+        assert_eq!(page1.get(0).unwrap().delta, 0);
+        assert_eq!(page1.get(1).unwrap().delta, 1);
+
+        // Second page: offset=2, limit=2 → entries 2,3
+        let page2 = client.get_history(&subject, &reporter, &2, &2);
+        assert_eq!(page2.len(), 2);
+        assert_eq!(page2.get(0).unwrap().delta, 2);
+
+        // Last page: offset=4, limit=10 → only entry 4 remains
+        let page3 = client.get_history(&subject, &reporter, &4, &10);
+        assert_eq!(page3.len(), 1);
+        assert_eq!(page3.get(0).unwrap().delta, 4);
+
+        // Offset beyond length → empty
+        let empty = client.get_history(&subject, &reporter, &99, &10);
+        assert_eq!(empty.len(), 0);
     }
 
     #[test]

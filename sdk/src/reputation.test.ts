@@ -57,8 +57,7 @@ describe("ReputationClient.getScoreHistory", () => {
   });
 
   it("returns decoded ScoreHistoryEntry array on success", async () => {
-    const { scValToNative } =
-      await import("@stellar/stellar-sdk");
+    const { scValToNative } = await import("@stellar/stellar-sdk");
 
     const mockEntries = [
       { reporter: "GREPORTER", delta: 50, reason: "completed KYC", submittedAt: 1700000000 },
@@ -66,20 +65,49 @@ describe("ReputationClient.getScoreHistory", () => {
     ];
 
     (scValToNative as ReturnType<typeof vi.fn>).mockReturnValue(mockEntries);
-    mockSimulateTransaction.mockResolvedValue({
-      result: { retval: {} },
-    });
+    mockSimulateTransaction.mockResolvedValue({ result: { retval: {} } });
 
-    const result = await client.getScoreHistory(
-      "GCALLER",
-      "GSUBJECT",
-      "GREPORTER"
-    );
+    const result = await client.getScoreHistory("GCALLER", "GSUBJECT", "GREPORTER");
 
     expect(result).toEqual(mockEntries);
     expect(result).toHaveLength(2);
     expect(result[0].delta).toBe(50);
     expect(result[1].reason).toBe("active trader");
+  });
+
+  it("uses default limit=20 and offset=0 when not provided", async () => {
+    const { nativeToScVal, scValToNative } = await import("@stellar/stellar-sdk");
+
+    (scValToNative as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    mockSimulateTransaction.mockResolvedValue({ result: { retval: {} } });
+
+    await client.getScoreHistory("GCALLER", "GSUBJECT", "GREPORTER");
+
+    expect(nativeToScVal).toHaveBeenCalledWith(0,  { type: "u32" }); // offset
+    expect(nativeToScVal).toHaveBeenCalledWith(20, { type: "u32" }); // limit
+  });
+
+  it("forwards custom limit and offset to the contract call", async () => {
+    const { nativeToScVal, scValToNative } = await import("@stellar/stellar-sdk");
+
+    (scValToNative as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    mockSimulateTransaction.mockResolvedValue({ result: { retval: {} } });
+
+    await client.getScoreHistory("GCALLER", "GSUBJECT", "GREPORTER", 40, 10);
+
+    expect(nativeToScVal).toHaveBeenCalledWith(40, { type: "u32" }); // offset
+    expect(nativeToScVal).toHaveBeenCalledWith(10, { type: "u32" }); // limit
+  });
+
+  it("returns an empty array for a reporter with no history", async () => {
+    const { scValToNative } = await import("@stellar/stellar-sdk");
+
+    (scValToNative as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    mockSimulateTransaction.mockResolvedValue({ result: { retval: {} } });
+
+    const result = await client.getScoreHistory("GCALLER", "GSUBJECT", "GREPORTER_NEW");
+
+    expect(result).toEqual([]);
   });
 
   it("throws when simulation returns an error", async () => {
@@ -88,23 +116,5 @@ describe("ReputationClient.getScoreHistory", () => {
     await expect(
       client.getScoreHistory("GCALLER", "GSUBJECT", "GREPORTER")
     ).rejects.toThrow("Simulation failed: contract trap");
-  });
-
-  it("returns an empty array when the reporter has no history", async () => {
-    const { scValToNative } =
-      await import("@stellar/stellar-sdk");
-
-    (scValToNative as ReturnType<typeof vi.fn>).mockReturnValue([]);
-    mockSimulateTransaction.mockResolvedValue({
-      result: { retval: {} },
-    });
-
-    const result = await client.getScoreHistory(
-      "GCALLER",
-      "GSUBJECT",
-      "GREPORTER_NEW"
-    );
-
-    expect(result).toEqual([]);
   });
 });

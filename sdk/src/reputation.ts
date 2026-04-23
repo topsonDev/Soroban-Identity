@@ -61,11 +61,21 @@ export class ReputationClient {
     ) as ReputationRecord;
   }
 
-  /** Get score submission history for a subject from a specific reporter. */
+  /**
+   * Get score submission history for a subject from a specific reporter.
+   *
+   * @param callerAddress   - Stellar address used to build the transaction.
+   * @param subjectAddress  - The subject whose history is being queried.
+   * @param reporterAddress - The reporter whose submissions to retrieve.
+   * @param offset          - Number of entries to skip (default: 0).
+   * @param limit           - Maximum entries to return (default: 20, contract cap: 100).
+   */
   async getScoreHistory(
     callerAddress: string,
     subjectAddress: string,
-    reporterAddress: string
+    reporterAddress: string,
+    offset = 0,
+    limit = 20
   ): Promise<ScoreHistoryEntry[]> {
     const account = await this.server.getAccount(callerAddress);
 
@@ -77,7 +87,9 @@ export class ReputationClient {
         this.contract.call(
           "get_history",
           nativeToScVal(subjectAddress, { type: "address" }),
-          nativeToScVal(reporterAddress, { type: "address" })
+          nativeToScVal(reporterAddress, { type: "address" }),
+          nativeToScVal(offset, { type: "u32" }),
+          nativeToScVal(limit, { type: "u32" })
         )
       )
       .setTimeout(30)
