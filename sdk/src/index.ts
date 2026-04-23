@@ -7,7 +7,7 @@ export type {
   CredentialType,
   SorobanIdentityConfig,
 } from "./types";
-export type { ReputationRecord } from "./reputation";
+export type { ReputationRecord, ScoreHistoryEntry } from "./reputation";
 
 // Testnet defaults — fill contract IDs after deployment
 export const TESTNET_CONFIG: SorobanIdentityConfig = {
