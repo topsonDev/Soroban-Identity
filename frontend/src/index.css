@@ -1,10 +1,179 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ── Color tokens: light mode (default) ─────────────────────────────────────── */
+
+:root {
+  --bg:                       #f8fafc;
+  --bg-subtle:                #f1f5f9;
+  --card-bg:                  #ffffff;
+  --card-bg-accent:           #ede9fe;
+  --card-border:              #e2e8f0;
+  --card-border-accent:       #c4b5fd;
+  --dropdown-bg:              #ffffff;
+  --cred-item-bg:             #f1f5f9;
+  --text:                     #0f172a;
+  --text-muted:               #64748b;
+  --border-input:             #cbd5e1;
+  --accent:                   #7c3aed;
+  --accent-hover:             #6d28d9;
+  --accent-light:             #7c3aed;
+  --btn-disabled-bg:          #e2e8f0;
+  --btn-disabled-color:       #94a3b8;
+  --result-bg:                #f1f5f9;
+  --result-text:              #64748b;
+  --tab-border:               #cbd5e1;
+  --tab-color:                #64748b;
+  --header-border:            #e2e8f0;
+  --badge-green-bg:           #dcfce7;
+  --badge-green-text:         #166534;
+  --badge-red-bg:             #fee2e2;
+  --badge-red-text:           #991b1b;
+  --badge-purple-bg:          #ede9fe;
+  --badge-purple-text:        #5b21b6;
+  --error-text:               #dc2626;
+  --sybil-pass-bg:            rgba(34,197,94,0.15);
+  --sybil-pass-text:          #16a34a;
+  --sybil-pass-border:        #16a34a;
+  --sybil-fail-bg:            rgba(239,68,68,0.15);
+  --sybil-fail-text:          #dc2626;
+  --sybil-fail-border:        #dc2626;
+  --filter-badge-active-bg:   #7c3aed;
+  --filter-badge-active-text: #ffffff;
+}
+
+/* ── Dark mode via system preference ─────────────────────────────────────────── */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:                       #0a0a0f;
+    --bg-subtle:                #0f172a;
+    --card-bg:                  #111827;
+    --card-bg-accent:           #1e1b4b;
+    --card-border:              #1e293b;
+    --card-border-accent:       #4c1d95;
+    --dropdown-bg:              #1e293b;
+    --cred-item-bg:             #1e293b;
+    --text:                     #e2e8f0;
+    --text-muted:               #94a3b8;
+    --border-input:             #334155;
+    --accent:                   #7c3aed;
+    --accent-hover:             #6d28d9;
+    --accent-light:             #a78bfa;
+    --btn-disabled-bg:          #374151;
+    --btn-disabled-color:       #9ca3af;
+    --result-bg:                #0f172a;
+    --result-text:              #94a3b8;
+    --tab-border:               #334155;
+    --tab-color:                #94a3b8;
+    --header-border:            #1e293b;
+    --badge-green-bg:           #064e3b;
+    --badge-green-text:         #6ee7b7;
+    --badge-red-bg:             #450a0a;
+    --badge-red-text:           #fca5a5;
+    --badge-purple-bg:          #2e1065;
+    --badge-purple-text:        #c4b5fd;
+    --error-text:               #fca5a5;
+    --sybil-pass-bg:            rgba(34,197,94,0.15);
+    --sybil-pass-text:          #4ade80;
+    --sybil-pass-border:        #4ade80;
+    --sybil-fail-bg:            rgba(239,68,68,0.15);
+    --sybil-fail-text:          #f87171;
+    --sybil-fail-border:        #f87171;
+    --filter-badge-active-bg:   #a78bfa;
+    --filter-badge-active-text: #1e1b4b;
+  }
+}
+
+/* ── Dark mode via manual class toggle ───────────────────────────────────────── */
+
+html.dark {
+  --bg:                       #0a0a0f;
+  --bg-subtle:                #0f172a;
+  --card-bg:                  #111827;
+  --card-bg-accent:           #1e1b4b;
+  --card-border:              #1e293b;
+  --card-border-accent:       #4c1d95;
+  --dropdown-bg:              #1e293b;
+  --cred-item-bg:             #1e293b;
+  --text:                     #e2e8f0;
+  --text-muted:               #94a3b8;
+  --border-input:             #334155;
+  --accent:                   #7c3aed;
+  --accent-hover:             #6d28d9;
+  --accent-light:             #a78bfa;
+  --btn-disabled-bg:          #374151;
+  --btn-disabled-color:       #9ca3af;
+  --result-bg:                #0f172a;
+  --result-text:              #94a3b8;
+  --tab-border:               #334155;
+  --tab-color:                #94a3b8;
+  --header-border:            #1e293b;
+  --badge-green-bg:           #064e3b;
+  --badge-green-text:         #6ee7b7;
+  --badge-red-bg:             #450a0a;
+  --badge-red-text:           #fca5a5;
+  --badge-purple-bg:          #2e1065;
+  --badge-purple-text:        #c4b5fd;
+  --error-text:               #fca5a5;
+  --sybil-pass-bg:            rgba(34,197,94,0.15);
+  --sybil-pass-text:          #4ade80;
+  --sybil-pass-border:        #4ade80;
+  --sybil-fail-bg:            rgba(239,68,68,0.15);
+  --sybil-fail-text:          #f87171;
+  --sybil-fail-border:        #f87171;
+  --filter-badge-active-bg:   #a78bfa;
+  --filter-badge-active-text: #1e1b4b;
+}
+
+/* ── Light mode forced via manual class toggle ───────────────────────────────── */
+
+html.light {
+  --bg:                       #f8fafc;
+  --bg-subtle:                #f1f5f9;
+  --card-bg:                  #ffffff;
+  --card-bg-accent:           #ede9fe;
+  --card-border:              #e2e8f0;
+  --card-border-accent:       #c4b5fd;
+  --dropdown-bg:              #ffffff;
+  --cred-item-bg:             #f1f5f9;
+  --text:                     #0f172a;
+  --text-muted:               #64748b;
+  --border-input:             #cbd5e1;
+  --accent:                   #7c3aed;
+  --accent-hover:             #6d28d9;
+  --accent-light:             #7c3aed;
+  --btn-disabled-bg:          #e2e8f0;
+  --btn-disabled-color:       #94a3b8;
+  --result-bg:                #f1f5f9;
+  --result-text:              #64748b;
+  --tab-border:               #cbd5e1;
+  --tab-color:                #64748b;
+  --header-border:            #e2e8f0;
+  --badge-green-bg:           #dcfce7;
+  --badge-green-text:         #166534;
+  --badge-red-bg:             #fee2e2;
+  --badge-red-text:           #991b1b;
+  --badge-purple-bg:          #ede9fe;
+  --badge-purple-text:        #5b21b6;
+  --error-text:               #dc2626;
+  --sybil-pass-bg:            rgba(34,197,94,0.15);
+  --sybil-pass-text:          #16a34a;
+  --sybil-pass-border:        #16a34a;
+  --sybil-fail-bg:            rgba(239,68,68,0.15);
+  --sybil-fail-text:          #dc2626;
+  --sybil-fail-border:        #dc2626;
+  --filter-badge-active-bg:   #7c3aed;
+  --filter-badge-active-text: #ffffff;
+}
+
+/* ── Base styles ─────────────────────────────────────────────────────────────── */
+
 body {
   font-family: system-ui, -apple-system, sans-serif;
-  background: #0a0a0f;
-  color: #e2e8f0;
+  background: var(--bg);
+  color: var(--text);
   min-height: 100vh;
+  transition: background 0.2s, color 0.2s;
 }
 
 .container { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; }
@@ -12,36 +181,36 @@ body {
 header {
   text-align: center;
   padding: 3rem 0 2rem;
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid var(--header-border);
   margin-bottom: 2rem;
 }
 
-header h1 { font-size: 2rem; color: #7c3aed; }
-header p  { color: #94a3b8; margin-top: 0.5rem; }
+header h1 { font-size: 2rem; color: var(--accent); }
+header p  { color: var(--text-muted); margin-top: 0.5rem; }
 
 .card {
-  background: #111827;
-  border: 1px solid #1e293b;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
   border-radius: 12px;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
 }
 
-.card h2 { font-size: 1.1rem; margin-bottom: 1rem; color: #a78bfa; }
+.card h2 { font-size: 1.1rem; margin-bottom: 1rem; color: var(--accent-light); }
 
 input, textarea {
   width: 100%;
-  background: #0f172a;
-  border: 1px solid #334155;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-input);
   border-radius: 8px;
   padding: 0.6rem 0.8rem;
-  color: #e2e8f0;
+  color: var(--text);
   font-size: 0.9rem;
   margin-bottom: 0.75rem;
 }
 
 button {
-  background: #7c3aed;
+  background: var(--accent);
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -51,8 +220,8 @@ button {
   transition: background 0.2s;
 }
 
-button:hover  { background: #6d28d9; }
-button:disabled { background: #374151; cursor: not-allowed; }
+button:hover    { background: var(--accent-hover); }
+button:disabled { background: var(--btn-disabled-bg); color: var(--btn-disabled-color); cursor: not-allowed; }
 
 .badge {
   display: inline-block;
@@ -62,26 +231,37 @@ button:disabled { background: #374151; cursor: not-allowed; }
   font-weight: 600;
 }
 
-.badge-green  { background: #064e3b; color: #6ee7b7; }
-.badge-red    { background: #450a0a; color: #fca5a5; }
-.badge-purple { background: #2e1065; color: #c4b5fd; }
+.badge-green  { background: var(--badge-green-bg);  color: var(--badge-green-text); }
+.badge-red    { background: var(--badge-red-bg);    color: var(--badge-red-text); }
+.badge-purple { background: var(--badge-purple-bg); color: var(--badge-purple-text); }
 
 .result {
   margin-top: 1rem;
   padding: 0.75rem;
-  background: #0f172a;
+  background: var(--result-bg);
   border-radius: 8px;
   font-size: 0.8rem;
   word-break: break-all;
-  color: #94a3b8;
+  color: var(--result-text);
 }
 
 .tabs { display: flex; gap: 0.5rem; margin-bottom: 2rem; }
 .tab {
   background: transparent;
-  border: 1px solid #334155;
-  color: #94a3b8;
+  border: 1px solid var(--tab-border);
+  color: var(--tab-color);
   padding: 0.5rem 1rem;
   border-radius: 8px;
 }
-.tab.active { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+.tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.theme-toggle {
+  background: transparent;
+  border: 1px solid var(--border-input);
+  color: var(--text-muted);
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+  border-radius: 8px;
+  transition: background 0.2s, color 0.2s;
+}
+.theme-toggle:hover { background: var(--bg-subtle); color: var(--text); }
