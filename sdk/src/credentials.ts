@@ -7,7 +7,7 @@ import {
   nativeToScVal,
   scValToNative,
 } from "@stellar/stellar-sdk";
-import type { Credential, CredentialType, SorobanIdentityConfig } from "./types";
+import type { Credential, CredentialType, SorobanIdentityConfig, VerifyResult } from "./types";
 
 export class CredentialClient {
   private server: SorobanRpc.Server;
@@ -71,11 +71,12 @@ export class CredentialClient {
 
   /**
    * Verify a credential is valid (not revoked, not expired).
+   * Returns a typed result so callers can distinguish failure reasons.
    */
   async verifyCredential(
     callerAddress: string,
     credentialId: string
-  ): Promise<boolean> {
+  ): Promise<VerifyResult> {
     const account = await this.server.getAccount(callerAddress);
     const idBytes = Buffer.from(credentialId, "hex");
 
@@ -93,12 +94,35 @@ export class CredentialClient {
       .build();
 
     const result = await this.server.simulateTransaction(tx);
-    if (SorobanRpc.Api.isSimulationError(result)) return false;
 
-    return scValToNative(
+    if (SorobanRpc.Api.isSimulationError(result)) {
+      const error: string = (result as { error: string }).error ?? "";
+      if (error.includes("credential not found")) {
+        return { valid: false, reason: "not_found" };
+      }
+      return { valid: false, reason: "unknown" };
+    }
+
+    const valid = scValToNative(
       (result as SorobanRpc.Api.SimulateTransactionSuccessResponse)
         .result!.retval
     ) as boolean;
+
+    if (valid) return { valid: true };
+
+    // Contract returned false — fetch the credential to determine why
+    try {
+      const cred = await this.getCredential(callerAddress, credentialId);
+      if (cred.revoked) return { valid: false, reason: "revoked" };
+      if (cred.expiresAt > 0 && Date.now() / 1000 > cred.expiresAt) {
+        return { valid: false, reason: "expired" };
+      }
+    } catch {
+      // getCredential failed — credential likely doesn't exist
+      return { valid: false, reason: "not_found" };
+    }
+
+    return { valid: false, reason: "unknown" };
   }
 
   /**

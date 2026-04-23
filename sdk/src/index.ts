@@ -5,6 +5,8 @@ export type {
   DidDocument,
   Credential,
   CredentialType,
+  VerifyResult,
+  VerifyFailReason,
   SorobanIdentityConfig,
 } from "./types";
 export type { ReputationRecord, ScoreHistoryEntry } from "./reputation";

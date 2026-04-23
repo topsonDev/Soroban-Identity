@@ -8,7 +8,13 @@ interface Props {
   };
 }
 
-type VerifyState = "idle" | "valid" | "invalid";
+type VerifyState =
+  | "idle"
+  | "valid"
+  | "not_found"
+  | "revoked"
+  | "expired"
+  | "invalid";
 
 export default function CredentialsPanel({ wallet }: Props) {
   const [credId, setCredId] = useState("");
@@ -26,7 +32,15 @@ export default function CredentialsPanel({ wallet }: Props) {
     try {
       // TODO: wire CredentialClient.verifyCredential() from SDK
       await new Promise((r) => setTimeout(r, 800));
-      setVerifyState(credId.startsWith("0") ? "invalid" : "valid");
+      // Placeholder until SDK is wired — simulate a typed result
+      const mockResult = credId.startsWith("0")
+        ? { valid: false as const, reason: "revoked" as const }
+        : { valid: true as const };
+      if (mockResult.valid) {
+        setVerifyState("valid");
+      } else {
+        setVerifyState(mockResult.reason);
+      }
     } catch {
       setVerifyState("invalid");
     } finally {
@@ -66,13 +80,21 @@ export default function CredentialsPanel({ wallet }: Props) {
         </button>
         {verifyState !== "idle" && (
           <div style={{ marginTop: "1rem" }}>
-            <span
-              className={`badge ${
-                verifyState === "valid" ? "badge-green" : "badge-red"
-              }`}
-            >
-              {verifyState === "valid" ? "Valid" : "Invalid / Revoked"}
-            </span>
+            {verifyState === "valid" && (
+              <span className="badge badge-green">Valid</span>
+            )}
+            {verifyState === "revoked" && (
+              <span className="badge badge-red">Invalid — credential has been revoked</span>
+            )}
+            {verifyState === "expired" && (
+              <span className="badge badge-red">Invalid — credential has expired</span>
+            )}
+            {verifyState === "not_found" && (
+              <span className="badge badge-red">Invalid — credential not found</span>
+            )}
+            {(verifyState === "invalid" || verifyState === "unknown" as string) && (
+              <span className="badge badge-red">Invalid</span>
+            )}
           </div>
         )}
       </div>

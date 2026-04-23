@@ -21,6 +21,12 @@ export interface Credential {
   revoked: boolean;
 }
 
+export type VerifyFailReason = "not_found" | "revoked" | "expired" | "unknown";
+
+export type VerifyResult =
+  | { valid: true }
+  | { valid: false; reason: VerifyFailReason };
+
 export interface SorobanIdentityConfig {
   rpcUrl: string;
   networkPassphrase: string;
