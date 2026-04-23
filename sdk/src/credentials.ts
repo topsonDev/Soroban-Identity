@@ -52,7 +52,7 @@ export class CredentialClient {
           nativeToScVal(expiresAt, { type: "u64" })
         )
       )
-      .setTimeout(30)
+      .setTimeout(this.config.txTimeout ?? 30)
       .build();
 
     const prepared = await this.server.prepareTransaction(tx);
@@ -89,7 +89,7 @@ export class CredentialClient {
           nativeToScVal(idBytes, { type: "bytes" })
         )
       )
-      .setTimeout(30)
+      .setTimeout(this.config.txTimeout ?? 30)
       .build();
 
     const result = await this.server.simulateTransaction(tx);
@@ -121,7 +121,7 @@ export class CredentialClient {
           nativeToScVal(idBytes, { type: "bytes" })
         )
       )
-      .setTimeout(30)
+      .setTimeout(this.config.txTimeout ?? 30)
       .build();
 
     const result = await this.server.simulateTransaction(tx);

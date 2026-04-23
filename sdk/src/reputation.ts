@@ -48,7 +48,7 @@ export class ReputationClient {
           nativeToScVal(subjectAddress, { type: "address" })
         )
       )
-      .setTimeout(30)
+      .setTimeout(this.config.txTimeout ?? 30)
       .build();
 
     const result = await this.server.simulateTransaction(tx);
@@ -92,7 +92,7 @@ export class ReputationClient {
           nativeToScVal(limit, { type: "u32" })
         )
       )
-      .setTimeout(30)
+      .setTimeout(this.config.txTimeout ?? 30)
       .build();
 
     const result = await this.server.simulateTransaction(tx);
@@ -126,7 +126,7 @@ export class ReputationClient {
           nativeToScVal(minReporters, { type: "u32" })
         )
       )
-      .setTimeout(30)
+      .setTimeout(this.config.txTimeout ?? 30)
       .build();
 
     const result = await this.server.simulateTransaction(tx);
@@ -159,7 +159,7 @@ export class ReputationClient {
           nativeToScVal(reason, { type: "string" })
         )
       )
-      .setTimeout(30)
+      .setTimeout(this.config.txTimeout ?? 30)
       .build();
 
     const prepared = await this.server.prepareTransaction(tx);

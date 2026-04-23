@@ -16,7 +16,7 @@ export default function App() {
         <h1>Soroban Identity</h1>
         <p>Decentralized Identity for a Trustless World</p>
         <div style={{ position: "absolute", top: "1rem", right: 0 }}>
-          <WalletButton />
+          <WalletButton wallet={wallet} />
         </div>
       </header>
 

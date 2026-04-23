@@ -1,6 +1,8 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
+import SignClient from "@walletconnect/sign-client";
 
-// Freighter injects window.freighter — types are minimal here
+// ── Freighter types ───────────────────────────────────────────────────────────
+
 declare global {
   interface Window {
     freighter?: {
@@ -12,13 +14,28 @@ declare global {
   }
 }
 
+// ── Public types ──────────────────────────────────────────────────────────────
+
+export type WalletType = "freighter" | "walletconnect";
+
 export interface WalletState {
   publicKey: string | null;
   networkPassphrase: string | null;
   connected: boolean;
   connecting: boolean;
+  walletType: WalletType | null;
   error: string | null;
 }
+
+// WalletConnect project ID — replace with your own from https://cloud.walletconnect.com
+const WC_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? "YOUR_PROJECT_ID";
+
+const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
+
+// Stellar Testnet chain for WalletConnect
+const STELLAR_CHAIN = "stellar:testnet";
+
+// ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useWallet() {
   const [state, setState] = useState<WalletState>({
@@ -26,19 +43,25 @@ export function useWallet() {
     networkPassphrase: null,
     connected: false,
     connecting: false,
+    walletType: null,
     error: null,
   });
 
-  const connect = useCallback(async () => {
+  // Hold WalletConnect session ref so signTransaction can access it
+  const wcClientRef = useRef<Awaited<ReturnType<typeof SignClient.init>> | null>(null);
+  const wcTopicRef = useRef<string | null>(null);
+
+  // ── Freighter ───────────────────────────────────────────────────────────────
+
+  const connectFreighter = useCallback(async () => {
     if (!window.freighter) {
       setState((s) => ({
         ...s,
-        error: "Freighter wallet not found. Install it from freighter.app",
+        connecting: false,
+        error: "Freighter not found. Install it from freighter.app",
       }));
       return;
     }
-
-    setState((s) => ({ ...s, connecting: true, error: null }));
 
     try {
       const isConnected = await window.freighter.isConnected();
@@ -61,40 +84,159 @@ export function useWallet() {
         networkPassphrase,
         connected: true,
         connecting: false,
+        walletType: "freighter",
         error: null,
       });
     } catch (e: unknown) {
       setState((s) => ({
         ...s,
         connecting: false,
-        error: e instanceof Error ? e.message : "Connection failed",
+        error: e instanceof Error ? e.message : "Freighter connection failed",
       }));
     }
   }, []);
 
-  const disconnect = useCallback(() => {
+  // ── WalletConnect ───────────────────────────────────────────────────────────
+
+  const connectWalletConnect = useCallback(async () => {
+    try {
+      const client = await SignClient.init({
+        projectId: WC_PROJECT_ID,
+        metadata: {
+          name: "Soroban Identity",
+          description: "Decentralized Identity for a Trustless World",
+          url: window.location.origin,
+          icons: [`${window.location.origin}/favicon.ico`],
+        },
+      });
+
+      wcClientRef.current = client;
+
+      const { uri, approval } = await client.connect({
+        requiredNamespaces: {
+          stellar: {
+            methods: ["stellar_signXDR"],
+            chains: [STELLAR_CHAIN],
+            events: ["accountsChanged"],
+          },
+        },
+      });
+
+      // Open QR modal — in production use @walletconnect/modal
+      if (uri) {
+        window.open(
+          `https://walletconnect.com/wc?uri=${encodeURIComponent(uri)}`,
+          "_blank"
+        );
+      }
+
+      const session = await approval();
+      wcTopicRef.current = session.topic;
+
+      // Extract Stellar public key from namespace accounts (format: "stellar:testnet:GXXX...")
+      const accounts = session.namespaces.stellar?.accounts ?? [];
+      const publicKey = accounts[0]?.split(":")[2] ?? null;
+
+      setState({
+        publicKey,
+        networkPassphrase: TESTNET_PASSPHRASE,
+        connected: true,
+        connecting: false,
+        walletType: "walletconnect",
+        error: null,
+      });
+
+      // Handle remote disconnect
+      client.on("session_delete", () => {
+        wcTopicRef.current = null;
+        setState({
+          publicKey: null,
+          networkPassphrase: null,
+          connected: false,
+          connecting: false,
+          walletType: null,
+          error: null,
+        });
+      });
+    } catch (e: unknown) {
+      setState((s) => ({
+        ...s,
+        connecting: false,
+        error: e instanceof Error ? e.message : "WalletConnect connection failed",
+      }));
+    }
+  }, []);
+
+  // ── Public API ──────────────────────────────────────────────────────────────
+
+  const connect = useCallback(
+    async (walletType: WalletType = "freighter") => {
+      setState((s) => ({ ...s, connecting: true, error: null }));
+      if (walletType === "walletconnect") {
+        await connectWalletConnect();
+      } else {
+        await connectFreighter();
+      }
+    },
+    [connectFreighter, connectWalletConnect]
+  );
+
+  const disconnect = useCallback(async () => {
+    if (state.walletType === "walletconnect" && wcClientRef.current && wcTopicRef.current) {
+      try {
+        await wcClientRef.current.disconnect({
+          topic: wcTopicRef.current,
+          reason: { code: 6000, message: "User disconnected" },
+        });
+      } catch {
+        // ignore — session may already be gone
+      }
+      wcClientRef.current = null;
+      wcTopicRef.current = null;
+    }
+
     setState({
       publicKey: null,
       networkPassphrase: null,
       connected: false,
       connecting: false,
+      walletType: null,
       error: null,
     });
-  }, []);
+  }, [state.walletType]);
 
   /**
-   * Sign a transaction XDR string via Freighter and return the signed XDR.
+   * Sign a transaction XDR string using whichever wallet is active.
+   * Returns the signed XDR.
    */
   const signTransaction = useCallback(
     async (xdr: string): Promise<string> => {
+      if (!state.connected) throw new Error("Wallet not connected");
+
+      if (state.walletType === "walletconnect") {
+        if (!wcClientRef.current || !wcTopicRef.current) {
+          throw new Error("WalletConnect session not available");
+        }
+        const result = await wcClientRef.current.request<{ signedXDR: string }>({
+          topic: wcTopicRef.current,
+          chainId: STELLAR_CHAIN,
+          request: {
+            method: "stellar_signXDR",
+            params: { xdr },
+          },
+        });
+        return result.signedXDR;
+      }
+
+      // Freighter
       if (!window.freighter || !state.networkPassphrase) {
-        throw new Error("Wallet not connected");
+        throw new Error("Freighter not available");
       }
       return window.freighter.signTransaction(xdr, {
         networkPassphrase: state.networkPassphrase,
       });
     },
-    [state.networkPassphrase]
+    [state.connected, state.walletType, state.networkPassphrase]
   );
 
   return { ...state, connect, disconnect, signTransaction };

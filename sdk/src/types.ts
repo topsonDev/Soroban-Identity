@@ -27,4 +27,6 @@ export interface SorobanIdentityConfig {
   identityRegistryId: string;
   credentialManagerId: string;
   reputationId: string;
+  /** Transaction timeout in seconds. Defaults to 30. */
+  txTimeout?: number;
 }
