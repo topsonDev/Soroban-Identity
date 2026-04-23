@@ -49,6 +49,7 @@ const config: SorobanIdentityConfig = {
   networkPassphrase: 'Test SDF Network ; September 2015',
   identityRegistryId: 'CONTRACT_A',
   credentialManagerId: 'CONTRACT_B',
+  reputationId: 'CONTRACT_C',
 };
 
 describe('IdentityClient', () => {
@@ -108,5 +109,39 @@ describe('IdentityClient', () => {
     const result = await client.hasActiveDid('GABC');
 
     expect(result).toBe(false);
+  });
+
+  it('updateDid — happy path resolves without error', async () => {
+    (client as any).waitForConfirmation = vi.fn().mockResolvedValue({});
+
+    const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
+
+    await expect(
+      client.updateDid(keypair, { service: 'https://example.com' })
+    ).resolves.toBeUndefined();
+  });
+
+  it('updateDid — throws descriptive error when DID not found', async () => {
+    (client as any).waitForConfirmation = vi.fn().mockRejectedValue(
+      new Error('DID not found')
+    );
+
+    const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
+
+    await expect(client.updateDid(keypair, {})).rejects.toThrow(
+      'No DID found for address GABC'
+    );
+  });
+
+  it('updateDid — throws descriptive error when caller is not the controller', async () => {
+    (client as any).waitForConfirmation = vi.fn().mockRejectedValue(
+      new Error('require_auth failed')
+    );
+
+    const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
+
+    await expect(client.updateDid(keypair, {})).rejects.toThrow(
+      'is not the controller'
+    );
   });
 });

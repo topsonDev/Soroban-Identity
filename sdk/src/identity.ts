@@ -58,6 +58,55 @@ export class IdentityClient {
   }
 
   /**
+   * Update metadata on an existing DID.
+   */
+  async updateDid(
+    keypair: Keypair,
+    metadata: Record<string, string>
+  ): Promise<void> {
+    const account = await this.server.getAccount(keypair.publicKey());
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call(
+          "update_did",
+          nativeToScVal(keypair.publicKey(), { type: "address" }),
+          nativeToScVal(metadata, { type: "map" })
+        )
+      )
+      .setTimeout(this.config.txTimeout ?? 30)
+      .build();
+
+    const prepared = await this.server.prepareTransaction(tx);
+    prepared.sign(keypair);
+
+    const result = await this.server.sendTransaction(prepared);
+    if (result.status !== "PENDING") {
+      throw new Error(`Transaction failed: ${result.status}`);
+    }
+
+    try {
+      await this.waitForConfirmation(result.hash);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("DID not found")) {
+        throw new Error(
+          `No DID found for address ${keypair.publicKey()}. Create one first with createDid.`
+        );
+      }
+      if (msg.includes("require_auth") || msg.includes("not authorized")) {
+        throw new Error(
+          `Address ${keypair.publicKey()} is not the controller of this DID.`
+        );
+      }
+      throw e;
+    }
+  }
+
+  /**
    * Resolve a DID document by controller address.
    */
   async resolveDid(controllerAddress: string): Promise<DidDocument> {
