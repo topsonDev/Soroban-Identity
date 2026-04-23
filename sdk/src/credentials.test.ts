@@ -145,4 +145,46 @@ describe("CredentialClient", () => {
 
     expect(result).toEqual({ valid: false, reason: "unknown" });
   });
+
+  it("getCredentialsBySubject — returns empty array when subject has no credentials", async () => {
+    const server = (client as any).server;
+    server.simulateTransaction.mockResolvedValueOnce({
+      result: { retval: [] },
+    });
+
+    const result = await client.getCredentialsBySubject("GABC", "GSUBJECT");
+
+    expect(result).toEqual([]);
+  });
+
+  it("getCredentialsBySubject — returns Credential[] for each ID", async () => {
+    const mockCredential = {
+      id: "aabbcc",
+      subject: "GSUBJECT",
+      issuer: "GABC",
+      credentialType: "Kyc",
+      claims: {},
+      signature: "",
+      issuedAt: 1000,
+      expiresAt: 0,
+      revoked: false,
+    };
+
+    const server = (client as any).server;
+
+    // First simulate call returns a list of one ID
+    server.simulateTransaction
+      .mockResolvedValueOnce({
+        result: { retval: [new Uint8Array(32)] },
+      })
+      // Second simulate call (getCredential) returns the credential
+      .mockResolvedValueOnce({
+        result: { retval: mockCredential },
+      });
+
+    const result = await client.getCredentialsBySubject("GABC", "GSUBJECT");
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(mockCredential);
+  });
 });
