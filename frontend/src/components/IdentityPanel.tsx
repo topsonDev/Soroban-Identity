@@ -19,11 +19,20 @@ export default function IdentityPanel({ wallet }: Props) {
   const [createResult, setCreateResult] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
+  const [minScore, setMinScore] = useState("50");
+  const [minReporters, setMinReporters] = useState("2");
+  const [sybilResult, setSybilResult] = useState<boolean | null>(null);
+  const [checkingsSybil, setCheckingSybil] = useState(false);
+
+  // resolveAddress is considered "loaded" once a resolve has succeeded
+  const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
+
   const handleResolve = async () => {
     if (!resolveAddress.trim()) return;
     setResolving(true);
     setResolveResult(null);
     setReputation(null);
+    setSybilResult(null);
     try {
       // TODO: wire IdentityClient.resolveDid() from SDK
       await new Promise((r) => setTimeout(r, 800));
@@ -54,8 +63,10 @@ export default function IdentityPanel({ wallet }: Props) {
       } finally {
         setReputationLoading(false);
       }
+      setResolvedAddress(resolveAddress.trim());
     } catch (e: unknown) {
       setResolveResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
+      setResolvedAddress(null);
     } finally {
       setResolving(false);
     }
@@ -73,6 +84,23 @@ export default function IdentityPanel({ wallet }: Props) {
       setCreateResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleSybilCheck = async () => {
+    if (!resolvedAddress) return;
+    setCheckingSybil(true);
+    setSybilResult(null);
+    try {
+      // TODO: wire ReputationClient.passesSybilCheck() from SDK
+      await new Promise((r) => setTimeout(r, 800));
+      // Mock: passes if minScore <= 100 and minReporters <= 5
+      const passes = Number(minScore) <= 100 && Number(minReporters) <= 5;
+      setSybilResult(passes);
+    } catch (e: unknown) {
+      setSybilResult(null);
+    } finally {
+      setCheckingSybil(false);
     }
   };
 
@@ -121,6 +149,69 @@ export default function IdentityPanel({ wallet }: Props) {
               No reputation record found for this address.
             </p>
           </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Anti-Sybil Check</h2>
+        {resolvedAddress ? (
+          <>
+            <p style={{ color: "#94a3b8", fontSize: "0.85rem", marginBottom: "1rem" }}>
+              Checking{" "}
+              <span style={{ color: "#a78bfa" }}>
+                {resolvedAddress.slice(0, 6)}…{resolvedAddress.slice(-4)}
+              </span>
+            </p>
+            <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem" }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: "block", color: "#94a3b8", fontSize: "0.8rem", marginBottom: "0.25rem" }}>
+                  Min Score
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={minScore}
+                  onChange={(e) => setMinScore(e.target.value)}
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: "block", color: "#94a3b8", fontSize: "0.8rem", marginBottom: "0.25rem" }}>
+                  Min Reporters
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={minReporters}
+                  onChange={(e) => setMinReporters(e.target.value)}
+                  style={{ width: "100%" }}
+                />
+              </div>
+            </div>
+            <button onClick={handleSybilCheck} disabled={checkingsSybil}>
+              {checkingsSybil ? "Checking…" : "Run Sybil Check"}
+            </button>
+            {sybilResult !== null && (
+              <div
+                style={{
+                  marginTop: "1rem",
+                  padding: "0.6rem 1rem",
+                  borderRadius: "0.5rem",
+                  fontWeight: 600,
+                  fontSize: "0.95rem",
+                  background: sybilResult ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
+                  color: sybilResult ? "#4ade80" : "#f87171",
+                  border: `1px solid ${sybilResult ? "#4ade80" : "#f87171"}`,
+                }}
+              >
+                {sybilResult ? "✓ Passes sybil check" : "✗ Fails sybil check"}
+              </div>
+            )}
+          </>
+        ) : (
+          <p style={{ color: "#94a3b8", fontSize: "0.85rem" }}>
+            Resolve a DID above to run the anti-sybil check.
+          </p>
         )}
       </div>
 

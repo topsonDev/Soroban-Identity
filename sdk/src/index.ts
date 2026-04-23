@@ -7,12 +7,22 @@ export type {
   CredentialType,
   SorobanIdentityConfig,
 } from "./types";
-export type { ReputationRecord } from "./reputation";
+export type { ReputationRecord, ScoreHistoryEntry } from "./reputation";
 
-// Testnet defaults
-export const TESTNET_CONFIG = {
+// Testnet defaults — fill contract IDs after deployment
+export const TESTNET_CONFIG: SorobanIdentityConfig = {
   rpcUrl: "https://soroban-testnet.stellar.org",
   networkPassphrase: "Test SDF Network ; September 2015",
-  identityRegistryId: "", // fill after deployment
-  credentialManagerId: "", // fill after deployment
+  identityRegistryId: "",
+  credentialManagerId: "",
+  reputationId: "",
+};
+
+// Mainnet defaults — fill contract IDs after deployment
+export const MAINNET_CONFIG: SorobanIdentityConfig = {
+  rpcUrl: "https://soroban-mainnet.stellar.org",
+  networkPassphrase: "Public Global Stellar Network ; September 2015",
+  identityRegistryId: "",
+  credentialManagerId: "",
+  reputationId: "",
 };
