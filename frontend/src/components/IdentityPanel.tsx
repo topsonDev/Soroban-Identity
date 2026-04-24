@@ -2,8 +2,12 @@ import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { WalletState } from '../hooks/useWallet';
 import type { ReputationRecord } from '../../../sdk/src/reputation';
+<<<<<<< fix/frontend-ux-issues
+import SkeletonCard from './SkeletonCard';
+=======
 import type { ScoreHistoryEntry } from '../../../sdk/src/reputation';
 import ReputationChart from './ReputationChart';
+>>>>>>> main
 
 interface Props {
   wallet: WalletState & {
@@ -22,6 +26,10 @@ export default function IdentityPanel({ wallet }: Props) {
 
   const [createResult, setCreateResult] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+
+  const [updateMetadata, setUpdateMetadata] = useState('');
+  const [updating, setUpdating] = useState(false);
+  const [updateSuccess, setUpdateSuccess] = useState(false);
 
   const [minScore, setMinScore] = useState("50");
   const [minReporters, setMinReporters] = useState("2");
@@ -120,6 +128,37 @@ export default function IdentityPanel({ wallet }: Props) {
     }
   };
 
+  const handleUpdate = async () => {
+    if (!wallet.connected || !wallet.publicKey) return;
+    setUpdating(true);
+    setUpdateSuccess(false);
+    try {
+      // TODO: build update_did tx via IdentityClient, sign + submit
+      await new Promise((r) => setTimeout(r, 1000));
+      // Re-fetch DID after successful update
+      setResolving(true);
+      setResolveResult(null);
+      await new Promise((r) => setTimeout(r, 800));
+      const updated = {
+        id: `did:stellar:${wallet.publicKey}`,
+        controller: wallet.publicKey,
+        metadata: updateMetadata ? JSON.parse(updateMetadata) : {},
+        createdAt: Math.floor(Date.now() / 1000),
+        updatedAt: Math.floor(Date.now() / 1000),
+        active: true,
+      };
+      setResolveResult(JSON.stringify(updated, null, 2));
+      setResolvedAddress(wallet.publicKey);
+      setUpdateSuccess(true);
+      setTimeout(() => setUpdateSuccess(false), 3000);
+    } catch (e: unknown) {
+      setCreateResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setUpdating(false);
+      setResolving(false);
+    }
+  };
+
   const handleSybilCheck = async () => {
     if (!resolvedAddress) return;
     setCheckingSybil(true);
@@ -149,7 +188,8 @@ export default function IdentityPanel({ wallet }: Props) {
         <button onClick={handleResolve} disabled={resolving || !resolveAddress}>
           {resolving ? 'Resolving…' : 'Resolve'}
         </button>
-        {resolveResult && <pre className="result">{resolveResult}</pre>}
+        {resolving && <SkeletonCard rows={4} />}
+        {!resolving && resolveResult && <pre className="result">{resolveResult}</pre>}
 
         {resolvedAddress && (
           <div style={{ marginTop: '0.75rem' }}>
@@ -292,6 +332,47 @@ export default function IdentityPanel({ wallet }: Props) {
           </p>
         )}
         {createResult && <pre className="result">{createResult}</pre>}
+      </div>
+
+      <div className="card">
+        <h2>Update DID</h2>
+        {wallet.connected && wallet.publicKey ? (
+          <>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+              Updating{' '}
+              <span style={{ color: 'var(--accent-light)' }}>
+                did:stellar:{wallet.publicKey.slice(0, 6)}…{wallet.publicKey.slice(-4)}
+              </span>
+            </p>
+            <textarea
+              placeholder='New metadata (JSON, e.g. {"name":"Alice"})'
+              value={updateMetadata}
+              onChange={(e) => setUpdateMetadata(e.target.value)}
+              rows={3}
+            />
+            <button onClick={handleUpdate} disabled={updating}>
+              {updating ? 'Updating…' : 'Update DID'}
+            </button>
+            {updateSuccess && (
+              <div style={{
+                marginTop: '0.75rem',
+                padding: '0.5rem 1rem',
+                borderRadius: '0.5rem',
+                background: 'var(--sybil-pass-bg)',
+                color: 'var(--sybil-pass-text)',
+                border: '1px solid var(--sybil-pass-border)',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+              }}>
+                ✓ DID updated successfully
+              </div>
+            )}
+          </>
+        ) : (
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+            Connect your wallet to update your DID metadata.
+          </p>
+        )}
       </div>
     </>
   );
