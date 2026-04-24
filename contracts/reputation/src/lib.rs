@@ -72,6 +72,10 @@ impl Reputation {
         if !reporters.contains(&reporter) {
             reporters.push_back(reporter.clone());
             env.storage().instance().set(&REPORTER, &reporters);
+            env.events().publish(
+                (REPORTER, symbol_short!("added")),
+                (reporter, env.ledger().timestamp()),
+            );
         }
     }
 
@@ -85,6 +89,10 @@ impl Reputation {
             }
         }
         env.storage().instance().set(&REPORTER, &updated);
+        env.events().publish(
+            (REPORTER, symbol_short!("removed")),
+            (reporter, env.ledger().timestamp()),
+        );
     }
 
     /// Set the default sybil threshold (admin only).
@@ -415,6 +423,55 @@ mod tests {
         let subject = Address::generate(&env); // no history
         // Even with zero thresholds the contract returns false when no record exists
         assert!(!client.passes_sybil_check(&subject, &0, &0));
+    }
+
+    #[test]
+    fn test_add_reporter_emits_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin    = Address::generate(&env);
+        let reporter = Address::generate(&env);
+
+        client.initialize(&admin);
+        client.add_reporter(&reporter);
+
+        let events = env.events().all();
+        assert!(events.iter().any(|(_, topics, _)| {
+            topics == soroban_sdk::vec![
+                &env,
+                soroban_sdk::Val::from(REPORTER),
+                soroban_sdk::Val::from(symbol_short!("added")),
+            ]
+        }));
+    }
+
+    #[test]
+    fn test_remove_reporter_emits_event() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin    = Address::generate(&env);
+        let reporter = Address::generate(&env);
+
+        client.initialize(&admin);
+        client.add_reporter(&reporter);
+        client.remove_reporter(&reporter);
+
+        let events = env.events().all();
+        assert!(events.iter().any(|(_, topics, _)| {
+            topics == soroban_sdk::vec![
+                &env,
+                soroban_sdk::Val::from(REPORTER),
+                soroban_sdk::Val::from(symbol_short!("removed")),
+            ]
+        }));
     }
 
     /// get_history returns only entries submitted by the specified reporter.
