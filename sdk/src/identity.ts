@@ -144,7 +144,14 @@ export class IdentityClient {
 
     const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
     if (SorobanRpc.Api.isSimulationError(result)) {
-      throw new Error(`Simulation failed: ${result.error}`);
+      const errMsg = result.error ?? "";
+      if (errMsg.includes("DidDeactivated")) {
+        throw new Error(`DID for address ${controllerAddress} has been deactivated.`);
+      }
+      if (errMsg.includes("DidNotFound")) {
+        throw new Error(`No DID found for address ${controllerAddress}.`);
+      }
+      throw new Error(`Simulation failed: ${errMsg}`);
     }
 
     return scValToNative(
