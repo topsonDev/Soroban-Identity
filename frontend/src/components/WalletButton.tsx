@@ -81,7 +81,16 @@ export default function WalletButton({ wallet }: Props) {
       )}
 
       {error && (
-        <span style={{ fontSize: "0.75rem", color: "var(--error-text)" }}>{error}</span>
+        <span style={{ fontSize: "0.75rem", color: "var(--error-text)" }}>
+          {error.toLowerCase().includes("freighter not found") ? (
+            <>Freighter not installed.{" "}
+              <a href="https://freighter.app" target="_blank" rel="noopener noreferrer"
+                style={{ color: "var(--accent-light)", textDecoration: "underline" }}>
+                Install it here
+              </a>
+            </>
+          ) : error}
+        </span>
       )}
     </div>
   );
