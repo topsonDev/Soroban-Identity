@@ -19,13 +19,51 @@ type VerifyState =
 
 type FilterType = "All" | CredentialType;
 
+function formatExpiry(expiresAt: number): string {
+  if (expiresAt === 0) return "No expiry";
+
+  const now = Date.now();
+  const expiryMs = expiresAt * 1000;
+  const diffMs = expiryMs - now;
+  const diffDays = Math.floor(Math.abs(diffMs) / (1000 * 60 * 60 * 24));
+  const diffHours = Math.floor(Math.abs(diffMs) / (1000 * 60 * 60));
+  const diffMinutes = Math.floor(Math.abs(diffMs) / (1000 * 60));
+
+  if (diffMs < 0) {
+    if (diffDays > 0) return `Expired ${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
+    if (diffHours > 0) return `Expired ${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+    return `Expired ${diffMinutes} min${diffMinutes > 1 ? "s" : ""} ago`;
+  }
+
+  if (diffDays > 0) return `Expires in ${diffDays} day${diffDays > 1 ? "s" : ""}`;
+  if (diffHours > 0) return `Expires in ${diffHours} hour${diffHours > 1 ? "s" : ""}`;
+  return `Expires in ${diffMinutes} min${diffMinutes > 1 ? "s" : ""}`;
+}
+
+function getExpiryStyle(expiresAt: number): React.CSSProperties {
+  if (expiresAt === 0) return { color: "var(--text-muted)" };
+
+  const now = Date.now();
+  const expiryMs = expiresAt * 1000;
+  const diffMs = expiryMs - now;
+  const diffDays = Math.floor(Math.abs(diffMs) / (1000 * 60 * 60 * 24));
+
+  if (diffMs < 0) {
+    return { color: "var(--error)", fontWeight: 600 };
+  }
+  if (diffDays <= 7) {
+    return { color: "var(--warning)", fontWeight: 600 };
+  }
+  return { color: "var(--text-muted)" };
+}
+
 // Mock credentials for demonstration — replace with SDK data when wired
 const MOCK_CREDENTIALS = [
-  { id: "abc001", credentialType: "Kyc" as CredentialType, subject: "GABC…" },
-  { id: "abc002", credentialType: "Kyc" as CredentialType, subject: "GABC…" },
-  { id: "abc003", credentialType: "Reputation" as CredentialType, subject: "GABC…" },
-  { id: "abc004", credentialType: "Achievement" as CredentialType, subject: "GABC…" },
-  { id: "abc005", credentialType: "Custom" as CredentialType, subject: "GABC…" },
+  { id: "abc001", credentialType: "Kyc" as CredentialType, subject: "GABC…", expiresAt: 0 },
+  { id: "abc002", credentialType: "Kyc" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 12 * 24 * 60 * 60 * 1000) / 1000) },
+  { id: "abc003", credentialType: "Reputation" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000) },
+  { id: "abc004", credentialType: "Achievement" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() - 5 * 24 * 60 * 60 * 1000) / 1000) },
+  { id: "abc005", credentialType: "Custom" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000) },
 ];
 
 const FILTER_OPTIONS: FilterType[] = ["All", "Kyc", "Reputation", "Achievement", "Custom"];
@@ -152,10 +190,12 @@ export default function CredentialsPanel({ wallet }: Props) {
                   alignItems: "center",
                   fontSize: "0.85rem",
                   color: "var(--text)",
+                  gap: "1rem",
                 }}
               >
                 <span style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{cred.id}</span>
                 <span className="badge badge-green">{cred.credentialType}</span>
+                <span style={getExpiryStyle(cred.expiresAt)}>{formatExpiry(cred.expiresAt)}</span>
               </li>
             ))}
           </ul>
