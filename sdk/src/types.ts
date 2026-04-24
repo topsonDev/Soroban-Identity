@@ -42,3 +42,11 @@ export interface CallOptions {
   /** Override transaction timeout in seconds for this call only. */
   timeoutSeconds?: number;
 }
+
+/** Returned by write methods — includes the prepared transaction and estimated fee. */
+export interface WriteResult {
+  /** Estimated fee in stroops (1 XLM = 10_000_000 stroops). */
+  estimatedFee: number;
+  /** Estimated fee in XLM (human-readable). */
+  estimatedFeeXlm: string;
+}

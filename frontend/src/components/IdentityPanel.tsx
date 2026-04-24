@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import type { WalletState } from '../hooks/useWallet';
 import type { ReputationRecord } from '../../../sdk/src/reputation';
 
@@ -26,6 +27,7 @@ export default function IdentityPanel({ wallet }: Props) {
 
   // resolveAddress is considered "loaded" once a resolve has succeeded
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
+  const [showQr, setShowQr] = useState(false);
 
   const handleResolve = async () => {
     if (!resolveAddress.trim()) return;
@@ -79,7 +81,10 @@ export default function IdentityPanel({ wallet }: Props) {
     try {
       // TODO: build tx via IdentityClient, sign via wallet.signTransaction(), submit
       await new Promise((r) => setTimeout(r, 1000));
-      setCreateResult(`DID created: did:stellar:${wallet.publicKey}`);
+      const mockFee = 100;
+      setCreateResult(
+        `DID created: did:stellar:${wallet.publicKey}\nEstimated fee: ${mockFee} stroops (${(mockFee / 10_000_000).toFixed(7)} XLM)`
+      );
     } catch (e: unknown) {
       setCreateResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -117,6 +122,19 @@ export default function IdentityPanel({ wallet }: Props) {
           {resolving ? 'Resolving…' : 'Resolve'}
         </button>
         {resolveResult && <pre className="result">{resolveResult}</pre>}
+
+        {resolvedAddress && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <button onClick={() => setShowQr((v) => !v)}>
+              {showQr ? 'Hide QR Code' : 'Show QR Code'}
+            </button>
+            {showQr && (
+              <div style={{ marginTop: '0.75rem', display: 'inline-block', background: '#fff', padding: '0.5rem', borderRadius: '0.5rem' }}>
+                <QRCodeSVG value={`did:stellar:${resolvedAddress}`} size={180} level="M" />
+              </div>
+            )}
+          </div>
+        )}
 
         {reputationLoading && (
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '1rem' }}>

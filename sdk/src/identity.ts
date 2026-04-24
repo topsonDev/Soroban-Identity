@@ -7,7 +7,7 @@ import {
   nativeToScVal,
   scValToNative,
 } from "@stellar/stellar-sdk";
-import type { CallOptions, DidDocument, SorobanIdentityConfig } from "./types";
+import type { CallOptions, DidDocument, SorobanIdentityConfig, WriteResult } from "./types";
 import { retryWithBackoff } from "./utils";
 
 export class IdentityClient {
@@ -23,12 +23,13 @@ export class IdentityClient {
 
   /**
    * Create a new DID for the given keypair.
+   * Returns the DID string and the estimated transaction fee.
    */
   async createDid(
     keypair: Keypair,
     metadata: Record<string, string> = {},
     options?: CallOptions
-  ): Promise<string> {
+  ): Promise<{ did: string } & WriteResult> {
     const account = await this.server.getAccount(keypair.publicKey());
 
     const metaScVal = nativeToScVal(metadata, { type: "map" });
@@ -49,6 +50,8 @@ export class IdentityClient {
       .build();
 
     const prepared = await retryWithBackoff(() => this.server.prepareTransaction(tx));
+    const estimatedFee = parseInt(prepared.fee, 10);
+    const estimatedFeeXlm = (estimatedFee / 10_000_000).toFixed(7);
     prepared.sign(keypair);
 
     const result = await retryWithBackoff(() => this.server.sendTransaction(prepared));
@@ -68,7 +71,8 @@ export class IdentityClient {
       }
       throw e;
     }
-    return scValToNative(confirmed.returnValue!) as string;
+    const did = scValToNative(confirmed.returnValue!) as string;
+    return { did, estimatedFee, estimatedFeeXlm };
   }
 
   /**
