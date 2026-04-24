@@ -107,9 +107,9 @@ export default function CredentialsPanel({ wallet }: Props) {
                 style={{
                   padding: "0.3rem 0.75rem",
                   borderRadius: "999px",
-                  border: isActive ? "2px solid #a78bfa" : "2px solid #334155",
-                  background: isActive ? "#1e1b4b" : "transparent",
-                  color: isActive ? "#a78bfa" : "#94a3b8",
+                  border: isActive ? "2px solid var(--accent-light)" : "2px solid var(--border-input)",
+                  background: isActive ? "var(--card-bg-accent)" : "transparent",
+                  color: isActive ? "var(--accent-light)" : "var(--text-muted)",
                   cursor: "pointer",
                   fontSize: "0.85rem",
                   fontWeight: isActive ? 600 : 400,
@@ -119,8 +119,8 @@ export default function CredentialsPanel({ wallet }: Props) {
                 {type}{" "}
                 <span
                   style={{
-                    background: isActive ? "#a78bfa" : "#334155",
-                    color: isActive ? "#1e1b4b" : "#94a3b8",
+                    background: isActive ? "var(--filter-badge-active-bg)" : "var(--border-input)",
+                    color: isActive ? "var(--filter-badge-active-text)" : "var(--text-muted)",
                     borderRadius: "999px",
                     padding: "0 0.4rem",
                     fontSize: "0.75rem",
@@ -135,7 +135,7 @@ export default function CredentialsPanel({ wallet }: Props) {
         </div>
 
         {filteredCredentials.length === 0 ? (
-          <p style={{ color: "#94a3b8", fontSize: "0.85rem" }}>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
             No {activeFilter} credentials found.
           </p>
         ) : (
@@ -144,17 +144,17 @@ export default function CredentialsPanel({ wallet }: Props) {
               <li
                 key={cred.id}
                 style={{
-                  background: "#1e293b",
+                  background: "var(--cred-item-bg)",
                   borderRadius: "0.5rem",
                   padding: "0.6rem 1rem",
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
                   fontSize: "0.85rem",
-                  color: "#e2e8f0",
+                  color: "var(--text)",
                 }}
               >
-                <span style={{ fontFamily: "monospace", color: "#94a3b8" }}>{cred.id}</span>
+                <span style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{cred.id}</span>
                 <span className="badge badge-green">{cred.credentialType}</span>
               </li>
             ))}
@@ -197,9 +197,9 @@ export default function CredentialsPanel({ wallet }: Props) {
         <h2>Issue Credential</h2>
         {wallet.connected ? (
           <>
-            <p style={{ color: "#94a3b8", fontSize: "0.85rem", marginBottom: "1rem" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
               Issuing as{" "}
-              <span style={{ color: "#a78bfa" }}>
+              <span style={{ color: "var(--accent-light)" }}>
                 {wallet.publicKey?.slice(0, 6)}…{wallet.publicKey?.slice(-4)}
               </span>
             </p>
@@ -213,7 +213,7 @@ export default function CredentialsPanel({ wallet }: Props) {
             </button>
           </>
         ) : (
-          <p style={{ color: "#94a3b8", fontSize: "0.85rem" }}>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
             Connect your Freighter wallet to issue credentials as a registered issuer.
           </p>
         )}
