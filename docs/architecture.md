@@ -25,6 +25,7 @@ Manages DID documents on-chain.
 | Function | Description |
 |---|---|
 | `initialize(admin)` | One-time setup |
+| `transfer_admin(current_admin, new_admin)` | Transfer admin rights (current admin only) |
 | `create_did(controller, metadata)` | Mint a new DID |
 | `update_did(controller, metadata)` | Update metadata |
 | `deactivate_did(controller)` | Soft-delete a DID |
@@ -38,6 +39,7 @@ Issues and verifies verifiable credentials.
 | Function | Description |
 |---|---|
 | `initialize(admin)` | One-time setup |
+| `transfer_admin(current_admin, new_admin)` | Transfer admin rights (current admin only) |
 | `add_issuer(issuer)` | Register a trusted issuer (admin) |
 | `remove_issuer(issuer)` | Remove an issuer (admin) |
 | `issue_credential(...)` | Issue a credential |

@@ -66,6 +66,19 @@ impl Reputation {
         env.storage().instance().set(&ADMIN, &admin);
     }
 
+    pub fn transfer_admin(env: Env, current_admin: Address, new_admin: Address) {
+        current_admin.require_auth();
+        let stored: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
+        if stored != current_admin {
+            panic!("not the admin");
+        }
+        env.storage().instance().set(&ADMIN, &new_admin);
+        env.events().publish(
+            (ADMIN, symbol_short!("transfer")),
+            (current_admin, new_admin),
+        );
+    }
+
     pub fn add_reporter(env: Env, reporter: Address) {
         Self::require_admin(&env);
         let mut reporters = Self::get_reporters(&env);
@@ -506,5 +519,41 @@ mod tests {
         let h2 = client.get_history(&subject, &reporter2, &0, &10);
         assert_eq!(h2.len(), 1);
         assert_eq!(h2.get(0).unwrap().delta, 99);
+    }
+
+    #[test]
+    fn test_transfer_admin_authorized() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin     = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+        let reporter  = Address::generate(&env);
+
+        client.initialize(&admin);
+        client.transfer_admin(&admin, &new_admin);
+        // new_admin can now add a reporter (mock_all_auths satisfies auth)
+        client.add_reporter(&reporter);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_transfer_admin_unauthorized() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin    = Address::generate(&env);
+        let attacker = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+
+        client.initialize(&admin);
+        // attacker is not the admin — must panic
+        client.transfer_admin(&attacker, &new_admin);
     }
 }
