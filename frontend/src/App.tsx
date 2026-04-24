@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import IdentityPanel from "./components/IdentityPanel";
 import CredentialsPanel from "./components/CredentialsPanel";
 import WalletButton from "./components/WalletButton";
 import { useWallet } from "./hooks/useWallet";
+import { useCredentialExpiryCheck } from "./hooks/useCredentialExpiryCheck";
+import type { Credential } from "../../sdk/src/types";
 
 type Tab = "identity" | "credentials";
 
@@ -30,6 +32,17 @@ export default function App() {
   const [isDark, toggleDark] = useDarkMode();
   const { t, i18n } = useTranslation();
 
+  // Mock fetch — replace with CredentialClient.getCredentialsBySubject() when wired
+  const fetchCredentials = useCallback(async (_address: string): Promise<Credential[]> => {
+    await new Promise((r) => setTimeout(r, 200));
+    const now = Math.floor(Date.now() / 1000);
+    return [
+      { id: "abc003", credentialType: "Reputation", subject: _address, issuer: "GISSUER", claims: {}, signature: "", issuedAt: now - 100, expiresAt: now + 3 * 24 * 60 * 60, revoked: false },
+    ];
+  }, []);
+
+  const { notification, dismiss } = useCredentialExpiryCheck(wallet.publicKey, fetchCredentials);
+
   const toggleLang = () => {
     const next = i18n.language === "en" ? "es" : "en";
     i18n.changeLanguage(next);
@@ -55,6 +68,35 @@ export default function App() {
           <WalletButton wallet={wallet} />
         </div>
       </header>
+
+      {notification && !notification.dismissed && (
+        <div
+          role="alert"
+          style={{
+            background: "var(--warning-bg, #fff3cd)",
+            color: "var(--warning-text, #856404)",
+            border: "1px solid var(--warning-border, #ffc107)",
+            borderRadius: "0.5rem",
+            padding: "0.6rem 1rem",
+            marginBottom: "1rem",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            fontSize: "0.9rem",
+          }}
+        >
+          <span>
+            ⚠ {notification.count} credential{notification.count > 1 ? "s" : ""} expiring within 7 days
+          </span>
+          <button
+            onClick={dismiss}
+            aria-label="Dismiss notification"
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1rem", color: "inherit" }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="tabs">
         <button

@@ -2,7 +2,12 @@ import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { WalletState } from '../hooks/useWallet';
 import type { ReputationRecord } from '../../../sdk/src/reputation';
+<<<<<<< fix/frontend-ux-issues
 import SkeletonCard from './SkeletonCard';
+=======
+import type { ScoreHistoryEntry } from '../../../sdk/src/reputation';
+import ReputationChart from './ReputationChart';
+>>>>>>> main
 
 interface Props {
   wallet: WalletState & {
@@ -17,6 +22,7 @@ export default function IdentityPanel({ wallet }: Props) {
   const [resolving, setResolving] = useState(false);
   const [reputation, setReputation] = useState<ReputationRecord | null>(null);
   const [reputationLoading, setReputationLoading] = useState(false);
+  const [scoreHistory, setScoreHistory] = useState<ScoreHistoryEntry[]>([]);
 
   const [createResult, setCreateResult] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -33,6 +39,7 @@ export default function IdentityPanel({ wallet }: Props) {
   // resolveAddress is considered "loaded" once a resolve has succeeded
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
   const [showQr, setShowQr] = useState(false);
+  const [resolvedDoc, setResolvedDoc] = useState<object | null>(null);
 
   const handleResolve = async () => {
     if (!resolveAddress.trim()) return;
@@ -40,6 +47,7 @@ export default function IdentityPanel({ wallet }: Props) {
     setResolveResult(null);
     setReputation(null);
     setSybilResult(null);
+    setScoreHistory([]);
     try {
       // TODO: wire IdentityClient.resolveDid() from SDK
       await new Promise((r) => setTimeout(r, 800));
@@ -52,6 +60,7 @@ export default function IdentityPanel({ wallet }: Props) {
         active: true,
       };
       setResolveResult(JSON.stringify(mock, null, 2));
+      setResolvedDoc(mock);
 
       // Fetch reputation alongside DID resolution
       setReputationLoading(true);
@@ -65,6 +74,16 @@ export default function IdentityPanel({ wallet }: Props) {
           updatedAt: Math.floor(Date.now() / 1000),
         };
         setReputation(mockRep);
+
+        // TODO: wire ReputationClient.getScoreHistory() from SDK
+        const now = Math.floor(Date.now() / 1000);
+        const mockHistory: ScoreHistoryEntry[] = [
+          { reporter: resolveAddress, delta: 10, reason: "KYC verified", submittedAt: now - 30 * 86400 },
+          { reporter: resolveAddress, delta: -5, reason: "Dispute", submittedAt: now - 20 * 86400 },
+          { reporter: resolveAddress, delta: 20, reason: "Achievement", submittedAt: now - 10 * 86400 },
+          { reporter: resolveAddress, delta: 17, reason: "Referral", submittedAt: now - 3 * 86400 },
+        ];
+        setScoreHistory(mockHistory);
       } catch {
         setReputation(null);
       } finally {
@@ -74,9 +93,21 @@ export default function IdentityPanel({ wallet }: Props) {
     } catch (e: unknown) {
       setResolveResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
       setResolvedAddress(null);
+      setResolvedDoc(null);
     } finally {
       setResolving(false);
     }
+  };
+
+  const handleExportDid = () => {
+    if (!resolvedDoc) return;
+    const blob = new Blob([JSON.stringify(resolvedDoc, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'did-document.json';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleCreate = async () => {
@@ -165,6 +196,13 @@ export default function IdentityPanel({ wallet }: Props) {
             <button onClick={() => setShowQr((v) => !v)}>
               {showQr ? 'Hide QR Code' : 'Show QR Code'}
             </button>
+            <button
+              onClick={handleExportDid}
+              disabled={!resolvedDoc}
+              style={{ marginLeft: '0.5rem' }}
+            >
+              Export JSON
+            </button>
             {showQr && (
               <div style={{ marginTop: '0.75rem', display: 'inline-block', background: '#fff', padding: '0.5rem', borderRadius: '0.5rem' }}>
                 <QRCodeSVG value={`did:stellar:${resolvedAddress}`} size={180} level="M" />
@@ -191,6 +229,10 @@ export default function IdentityPanel({ wallet }: Props) {
               Last updated:{' '}
               {new Date(reputation.updatedAt * 1000).toLocaleDateString()}
             </p>
+            <h4 style={{ marginTop: '1rem', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Score History
+            </h4>
+            <ReputationChart history={scoreHistory} />
           </div>
         )}
 
