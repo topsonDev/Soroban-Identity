@@ -20,6 +20,10 @@ pub enum ContractError {
 const IDENTITY: Symbol = symbol_short!("IDENTITY");
 const ADMIN: Symbol = symbol_short!("ADMIN");
 
+/// ~1 year in ledgers (5-second ledger close time).
+/// Used as the TTL extension on every persistent read/write.
+const TTL_LEDGERS: u32 = 6_312_000;
+
 // ── Data types ────────────────────────────────────────────────────────────────
 
 /// W3C-aligned DID document stored on-chain.
@@ -99,6 +103,7 @@ impl IdentityRegistry {
         };
 
         storage.set(&key, &doc);
+        storage.extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
         env.events().publish((IDENTITY, symbol_short!("created")), controller);
 
         Ok(did_id)
@@ -118,6 +123,7 @@ impl IdentityRegistry {
         doc.updated_at = env.ledger().timestamp();
 
         storage.set(&key, &doc);
+        storage.extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
         env.events().publish((IDENTITY, symbol_short!("updated")), controller);
         Ok(())
     }
@@ -134,6 +140,7 @@ impl IdentityRegistry {
         doc.updated_at = env.ledger().timestamp();
 
         storage.set(&key, &doc);
+        storage.extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
         env.events().publish((IDENTITY, symbol_short!("deactivated")), controller);
     }
 
