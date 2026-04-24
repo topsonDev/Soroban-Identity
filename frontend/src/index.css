@@ -255,6 +255,24 @@ button:disabled { background: var(--btn-disabled-bg); color: var(--btn-disabled-
 }
 .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+/* ── Skeleton loader ─────────────────────────────────────────────────────────── */
+
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--border-input) 25%, var(--bg-subtle) 50%, var(--border-input) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+
+.skeleton-card { display: flex; flex-direction: column; gap: 0.75rem; }
+.skeleton-title { height: 1.1rem; width: 40%; }
+.skeleton-row   { height: 0.85rem; }
+
 .theme-toggle {
   background: transparent;
   border: 1px solid var(--border-input);

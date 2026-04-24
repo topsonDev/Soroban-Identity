@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { WalletState } from '../hooks/useWallet';
 import type { ReputationRecord } from '../../../sdk/src/reputation';
+import SkeletonCard from './SkeletonCard';
 
 interface Props {
   wallet: WalletState & {
@@ -121,7 +122,8 @@ export default function IdentityPanel({ wallet }: Props) {
         <button onClick={handleResolve} disabled={resolving || !resolveAddress}>
           {resolving ? 'Resolving…' : 'Resolve'}
         </button>
-        {resolveResult && <pre className="result">{resolveResult}</pre>}
+        {resolving && <SkeletonCard rows={4} />}
+        {!resolving && resolveResult && <pre className="result">{resolveResult}</pre>}
 
         {resolvedAddress && (
           <div style={{ marginTop: '0.75rem' }}>

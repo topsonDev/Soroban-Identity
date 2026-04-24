@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { CredentialType } from "../../../sdk/src/types";
 import type { WalletState } from "../hooks/useWallet";
+import SkeletonCard from "./SkeletonCard";
 
 interface Props {
   wallet: WalletState & {
@@ -215,7 +216,8 @@ export default function CredentialsPanel({ wallet }: Props) {
         <button onClick={handleVerify} disabled={verifying || !credId}>
           {verifying ? "Verifying…" : "Verify"}
         </button>
-        {verifyState !== "idle" && (
+        {verifying && <SkeletonCard rows={2} />}
+        {!verifying && verifyState !== "idle" && (
           <div style={{ marginTop: "1rem" }}>
             {verifyState === "valid" && (
               <span className="badge badge-green">Valid</span>
