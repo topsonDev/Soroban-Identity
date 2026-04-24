@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { WalletState } from '../hooks/useWallet';
 import type { ReputationRecord } from '../../../sdk/src/reputation';
+import type { ScoreHistoryEntry } from '../../../sdk/src/reputation';
+import ReputationChart from './ReputationChart';
 
 interface Props {
   wallet: WalletState & {
@@ -16,6 +18,7 @@ export default function IdentityPanel({ wallet }: Props) {
   const [resolving, setResolving] = useState(false);
   const [reputation, setReputation] = useState<ReputationRecord | null>(null);
   const [reputationLoading, setReputationLoading] = useState(false);
+  const [scoreHistory, setScoreHistory] = useState<ScoreHistoryEntry[]>([]);
 
   const [createResult, setCreateResult] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -36,6 +39,7 @@ export default function IdentityPanel({ wallet }: Props) {
     setResolveResult(null);
     setReputation(null);
     setSybilResult(null);
+    setScoreHistory([]);
     try {
       // TODO: wire IdentityClient.resolveDid() from SDK
       await new Promise((r) => setTimeout(r, 800));
@@ -62,6 +66,16 @@ export default function IdentityPanel({ wallet }: Props) {
           updatedAt: Math.floor(Date.now() / 1000),
         };
         setReputation(mockRep);
+
+        // TODO: wire ReputationClient.getScoreHistory() from SDK
+        const now = Math.floor(Date.now() / 1000);
+        const mockHistory: ScoreHistoryEntry[] = [
+          { reporter: resolveAddress, delta: 10, reason: "KYC verified", submittedAt: now - 30 * 86400 },
+          { reporter: resolveAddress, delta: -5, reason: "Dispute", submittedAt: now - 20 * 86400 },
+          { reporter: resolveAddress, delta: 20, reason: "Achievement", submittedAt: now - 10 * 86400 },
+          { reporter: resolveAddress, delta: 17, reason: "Referral", submittedAt: now - 3 * 86400 },
+        ];
+        setScoreHistory(mockHistory);
       } catch {
         setReputation(null);
       } finally {
@@ -175,6 +189,10 @@ export default function IdentityPanel({ wallet }: Props) {
               Last updated:{' '}
               {new Date(reputation.updatedAt * 1000).toLocaleDateString()}
             </p>
+            <h4 style={{ marginTop: '1rem', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Score History
+            </h4>
+            <ReputationChart history={scoreHistory} />
           </div>
         )}
 
