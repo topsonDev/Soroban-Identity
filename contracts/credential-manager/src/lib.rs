@@ -12,6 +12,16 @@ const ISSUER: Symbol = symbol_short!("ISSUER");
 const CRED: Symbol = symbol_short!("CRED");
 const IDSEQ: Symbol = symbol_short!("IDSEQ");
 
+const MAX_CREDENTIALS_PER_TYPE_PER_ISSUER: u32 = 5;
+
+// ── Errors ────────────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum ContractError {
+    CredentialLimitExceeded,
+}
+
 // ── Data types ────────────────────────────────────────────────────────────────
 
 /// Credential types supported by the protocol.
@@ -103,14 +113,34 @@ impl CredentialManager {
         issuer.require_auth();
         Self::require_issuer(&env, &issuer);
 
+        // Enforce per-issuer-per-type-per-subject limit
+        let type_key = Self::issuer_type_key(&issuer, &subject, &credential_type);
+        let existing: Vec<BytesN<32>> = env
+            .storage()
+            .persistent()
+            .get(&type_key)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        // Count only active (non-revoked, non-expired) credentials
         let now = env.ledger().timestamp();
+        let active_count = existing.iter().filter(|id| {
+            match env.storage().persistent().get::<(Symbol, BytesN<32>), Credential>(&Self::cred_key(id)) {
+                None => false,
+                Some(c) => !c.revoked && (c.expires_at == 0 || c.expires_at > now),
+            }
+        }).count() as u32;
+
+        if active_count >= MAX_CREDENTIALS_PER_TYPE_PER_ISSUER {
+            panic!("CredentialLimitExceeded");
+        }
+
         let id = Self::generate_id(&env, now);
 
         let credential = Credential {
             id: id.clone(),
             subject: subject.clone(),
             issuer: issuer.clone(),
-            credential_type,
+            credential_type: credential_type.clone(),
             claims,
             signature,
             issued_at: now,
@@ -126,6 +156,11 @@ impl CredentialManager {
         subject_creds.push_back(id.clone());
         let subject_key = Self::subject_key(&subject);
         env.storage().persistent().set(&subject_key, &subject_creds);
+
+        // Index credential under issuer+subject+type
+        let mut type_creds = existing;
+        type_creds.push_back(id.clone());
+        env.storage().persistent().set(&type_key, &type_creds);
 
         env.events().publish((CRED, symbol_short!("issued")), (issuer, subject));
 
@@ -230,6 +265,10 @@ impl CredentialManager {
 
     fn subject_key(subject: &Address) -> (Symbol, Address) {
         (symbol_short!("sub"), subject.clone())
+    }
+
+    fn issuer_type_key(issuer: &Address, subject: &Address, credential_type: &CredentialType) -> (Symbol, Address, Address, CredentialType) {
+        (symbol_short!("it"), issuer.clone(), subject.clone(), credential_type.clone())
     }
 }
 
