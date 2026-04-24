@@ -34,7 +34,7 @@ Manages DID documents on-chain.
 
 ### credential-manager
 
-Issues and verifies verifiable credentials.
+Issues and verifies verifiable credentials. A maximum of **100 issuers** (`MAX_ISSUERS`) can be registered at any time; `add_issuer` panics with `MaxIssuersReached` if the cap is hit.
 
 | Function | Description |
 |---|---|

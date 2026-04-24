@@ -14,12 +14,15 @@ const IDSEQ: Symbol = symbol_short!("IDSEQ");
 
 const MAX_CREDENTIALS_PER_TYPE_PER_ISSUER: u32 = 5;
 
+const MAX_ISSUERS: u32 = 100;
+
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ContractError {
     CredentialLimitExceeded,
+    MaxIssuersReached,
 }
 
 // ── Data types ────────────────────────────────────────────────────────────────
@@ -93,6 +96,9 @@ impl CredentialManager {
         Self::require_admin(&env);
         let mut issuers = Self::get_issuers(&env);
         if !issuers.contains(&issuer) {
+            if issuers.len() >= MAX_ISSUERS {
+                panic!("MaxIssuersReached");
+            }
             issuers.push_back(issuer.clone());
             env.storage().instance().set(&ISSUER, &issuers);
             env.events().publish((ISSUER, symbol_short!("added")), issuer);
@@ -465,5 +471,20 @@ mod tests {
         let new_admin = Address::generate(&env);
 
         client.transfer_admin(&attacker, &new_admin);
+    }
+
+    /// add_issuer must panic with MaxIssuersReached once MAX_ISSUERS (100) are registered.
+    #[test]
+    #[should_panic]
+    fn test_max_issuers_cap() {
+        let (env, _admin, client) = setup();
+
+        // Register exactly MAX_ISSUERS (100) unique issuers
+        for _ in 0..100 {
+            client.add_issuer(&Address::generate(&env));
+        }
+
+        // The 101st add must panic
+        client.add_issuer(&Address::generate(&env));
     }
 }
