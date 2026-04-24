@@ -42,6 +42,9 @@ vi.mock('@stellar/stellar-sdk', () => ({
   },
   nativeToScVal: vi.fn().mockReturnValue({}),
   scValToNative: vi.fn().mockImplementation((v) => v),
+  StrKey: {
+    isValidEd25519PublicKey: (addr: string) => typeof addr === 'string' && addr.startsWith('G'),
+  },
 }));
 
 const config: SorobanIdentityConfig = {
@@ -121,7 +124,7 @@ describe('IdentityClient', () => {
 
     const result = await client.createDid(keypair, { service: 'https://example.com' });
 
-    expect(result).toBe('did:stellar:GABC');
+    expect(result.did).toBe('did:stellar:GABC');
   });
 
   it('createDid — throws descriptive error when DID already exists', async () => {
@@ -134,5 +137,13 @@ describe('IdentityClient', () => {
     await expect(client.createDid(keypair)).rejects.toThrow(
       'A DID already exists for address GABC'
     );
+  });
+
+  it('resolveDid — throws InvalidAddress for an invalid address', async () => {
+    await expect(client.resolveDid('not-valid')).rejects.toThrow('InvalidAddress');
+  });
+
+  it('hasActiveDid — throws InvalidAddress for an invalid address', async () => {
+    await expect(client.hasActiveDid('bad')).rejects.toThrow('InvalidAddress');
   });
 });

@@ -1,7 +1,7 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short,
+    contract, contractimpl, contracttype, contracterror, symbol_short,
     Address, Bytes, BytesN, Env, Map, String, Symbol, Vec,
 };
 
@@ -18,9 +18,16 @@ const MAX_ISSUERS: u32 = 100;
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 
-#[contracttype]
+#[contracterror]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ContractError {
+    AlreadyInitialized       = 1,
+    UnauthorizedIssuer       = 2,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum CredentialError {
     CredentialLimitExceeded,
     CredentialAlreadyExpired,
 }
@@ -70,11 +77,12 @@ pub struct CredentialManager;
 impl CredentialManager {
     // ── Admin ─────────────────────────────────────────────────────────────────
 
-    pub fn initialize(env: Env, admin: Address) {
+    pub fn initialize(env: Env, admin: Address) -> Result<(), ContractError> {
         if env.storage().instance().has(&ADMIN) {
-            panic!("already initialized");
+            return Err(ContractError::AlreadyInitialized);
         }
         env.storage().instance().set(&ADMIN, &admin);
+        Ok(())
     }
 
     /// Transfer admin rights to a new address. Only the current admin can call this.
@@ -192,7 +200,7 @@ impl CredentialManager {
     }
 
     /// Revoke a credential. Only the original issuer can revoke.
-    pub fn revoke_credential(env: Env, issuer: Address, credential_id: BytesN<32>) {
+    pub fn revoke_credential(env: Env, issuer: Address, credential_id: BytesN<32>) -> Result<(), ContractError> {
         issuer.require_auth();
 
         let key = Self::cred_key(&credential_id);
@@ -203,12 +211,13 @@ impl CredentialManager {
             .expect("credential not found");
 
         if cred.issuer != issuer {
-            panic!("only the issuer can revoke");
+            return Err(ContractError::UnauthorizedIssuer);
         }
 
         cred.revoked = true;
         env.storage().persistent().set(&key, &cred);
         env.events().publish((CRED, symbol_short!("revoked")), credential_id);
+        Ok(())
     }
 
     /// Verify a credential is valid (not revoked, not expired).
@@ -423,9 +432,8 @@ mod tests {
         assert!(!client.verify_credential(&cred_id));
     }
 
-    /// revoke_credential must panic when called by an address that did not issue the credential.
+    /// revoke_credential must return UnauthorizedIssuer when called by a different issuer.
     #[test]
-    #[should_panic]
     fn test_revoke_by_different_issuer() {
         let (env, _admin, client) = setup();
 
@@ -443,7 +451,16 @@ mod tests {
         );
 
         // issuer2 attempts to revoke a credential they did not issue
-        client.revoke_credential(&issuer2, &cred_id);
+        let result = client.try_revoke_credential(&issuer2, &cred_id);
+        assert_eq!(result, Err(Ok(ContractError::UnauthorizedIssuer)));
+    }
+
+    /// initialize must return AlreadyInitialized on a second call.
+    #[test]
+    fn test_double_initialize_returns_error() {
+        let (env, admin, client) = setup();
+        let result = client.try_initialize(&admin);
+        assert_eq!(result, Err(Ok(ContractError::AlreadyInitialized)));
     }
 
     /// get_credential returns all fields exactly as supplied at issuance.

@@ -8,7 +8,7 @@ import {
   scValToNative,
 } from "@stellar/stellar-sdk";
 import type { CallOptions, Credential, CredentialType, SorobanIdentityConfig, VerifyResult, WriteResult } from "./types";
-import { retryWithBackoff } from "./utils";
+import { retryWithBackoff, validateStellarAddress } from "./utils";
 
 export class CredentialClient {
   private server: SorobanRpc.Server;
@@ -97,6 +97,7 @@ export class CredentialClient {
     credentialId: string,
     options?: CallOptions
   ): Promise<VerifyResult> {
+    validateStellarAddress(callerAddress);
     const account = await this.server.getAccount(callerAddress);
     const idBytes = Buffer.from(credentialId, "hex");
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
@@ -154,6 +155,8 @@ export class CredentialClient {
     subjectAddress: string,
     options?: CallOptions
   ): Promise<Credential[]> {
+    validateStellarAddress(callerAddress);
+    validateStellarAddress(subjectAddress);
     const account = await this.server.getAccount(callerAddress);
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
@@ -197,6 +200,7 @@ export class CredentialClient {
     credentialId: string,
     options?: CallOptions
   ): Promise<Credential> {
+    validateStellarAddress(callerAddress);
     const account = await this.server.getAccount(callerAddress);
     const idBytes = Buffer.from(credentialId, "hex");
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
@@ -223,6 +227,21 @@ export class CredentialClient {
       (result as SorobanRpc.Api.SimulateTransactionSuccessResponse)
         .result!.retval
     ) as Credential;
+  }
+
+  /**
+   * Verify multiple credentials in parallel.
+   * Returns an array of VerifyResult in the same order as the input credentialIds.
+   */
+  async verifyCredentialsBatch(
+    callerAddress: string,
+    credentialIds: string[],
+    options?: CallOptions
+  ): Promise<VerifyResult[]> {
+    validateStellarAddress(callerAddress);
+    return Promise.all(
+      credentialIds.map((id) => this.verifyCredential(callerAddress, id, options))
+    );
   }
 
   private async waitForConfirmation(

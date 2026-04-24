@@ -10,9 +10,10 @@ use soroban_sdk::{
 #[contracterror]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ContractError {
-    DidNotFound    = 1,
-    DidDeactivated = 2,
-    MetadataTooLong = 3,
+    DidNotFound       = 1,
+    DidDeactivated    = 2,
+    MetadataTooLong   = 3,
+    AlreadyInitialized = 4,
 }
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
@@ -54,11 +55,12 @@ impl IdentityRegistry {
     // ── Admin ─────────────────────────────────────────────────────────────────
 
     /// Initialize the registry with an admin address.
-    pub fn initialize(env: Env, admin: Address) {
+    pub fn initialize(env: Env, admin: Address) -> Result<(), ContractError> {
         if env.storage().instance().has(&ADMIN) {
-            panic!("already initialized");
+            return Err(ContractError::AlreadyInitialized);
         }
         env.storage().instance().set(&ADMIN, &admin);
+        Ok(())
     }
 
     /// Transfer admin rights to a new address. Only the current admin can call this.
@@ -204,6 +206,21 @@ impl IdentityRegistry {
 mod tests {
     use super::*;
     use soroban_sdk::{testutils::Address as _, Env, Map};
+
+    #[test]
+    fn test_double_initialize_returns_error() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, IdentityRegistry);
+        let client = IdentityRegistryClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let result = client.try_initialize(&admin);
+        assert_eq!(result, Err(Ok(ContractError::AlreadyInitialized)));
+    }
 
     #[test]
     fn test_create_and_resolve_did() {

@@ -43,6 +43,9 @@ vi.mock("@stellar/stellar-sdk", () => {
     },
     nativeToScVal: vi.fn().mockReturnValue({}),
     scValToNative: vi.fn().mockImplementation((v) => v),
+    StrKey: {
+      isValidEd25519PublicKey: (addr: string) => typeof addr === "string" && addr.startsWith("G"),
+    },
   };
 });
 
@@ -228,5 +231,43 @@ describe("CredentialClient", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual(mockCredential);
+  });
+
+  it("verifyCredentialsBatch — returns results in input order", async () => {
+    const server = (client as any).server;
+    server.simulateTransaction
+      .mockResolvedValueOnce({ result: { retval: true } })
+      .mockResolvedValueOnce({ result: { retval: false } })
+      .mockResolvedValueOnce({ result: { retval: true } });
+
+    // For the false result, getCredential will also be called
+    server.simulateTransaction.mockResolvedValueOnce({
+      result: {
+        retval: {
+          id: "bb", subject: "GSUBJECT", issuer: "GABC",
+          credentialType: "Kyc", claims: {}, signature: "",
+          issuedAt: 1000, expiresAt: 0, revoked: true,
+        },
+      },
+    });
+
+    const results = await client.verifyCredentialsBatch("GABC", ["aa", "bb", "cc"]);
+
+    expect(results).toHaveLength(3);
+    expect(results[0]).toEqual({ valid: true });
+    expect(results[2]).toEqual({ valid: true });
+  });
+
+  it("verifyCredentialsBatch — returns empty array for empty input", async () => {
+    const results = await client.verifyCredentialsBatch("GABC", []);
+    expect(results).toEqual([]);
+  });
+
+  it("verifyCredential — throws InvalidAddress for invalid caller address", async () => {
+    await expect(client.verifyCredential("not-valid", "aabbcc")).rejects.toThrow("InvalidAddress");
+  });
+
+  it("getCredentialsBySubject — throws InvalidAddress for invalid subject address", async () => {
+    await expect(client.getCredentialsBySubject("GABC", "bad-address")).rejects.toThrow("InvalidAddress");
   });
 });

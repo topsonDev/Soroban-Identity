@@ -33,6 +33,9 @@ vi.mock("@stellar/stellar-sdk", async (importOriginal) => {
     BASE_FEE: "100",
     nativeToScVal: vi.fn(),
     scValToNative: vi.fn(),
+    StrKey: {
+      isValidEd25519PublicKey: (addr: string) => typeof addr === "string" && addr.startsWith("G"),
+    },
   };
 });
 
@@ -116,5 +119,17 @@ describe("ReputationClient.getScoreHistory", () => {
     await expect(
       client.getScoreHistory("GCALLER", "GSUBJECT", "GREPORTER")
     ).rejects.toThrow("Simulation failed: contract trap");
+  });
+
+  it("throws InvalidAddress when callerAddress is invalid", async () => {
+    await expect(
+      client.getScoreHistory("bad-address", "GSUBJECT", "GREPORTER")
+    ).rejects.toThrow("InvalidAddress");
+  });
+
+  it("throws InvalidAddress when subjectAddress is invalid", async () => {
+    await expect(
+      client.getReputation("GCALLER", "not-valid")
+    ).rejects.toThrow("InvalidAddress");
   });
 });

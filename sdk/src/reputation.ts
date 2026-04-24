@@ -8,7 +8,7 @@ import {
   scValToNative,
 } from "@stellar/stellar-sdk";
 import type { CallOptions, SorobanIdentityConfig, WriteResult } from "./types";
-import { retryWithBackoff } from "./utils";
+import { retryWithBackoff, validateStellarAddress } from "./utils";
 
 export interface ReputationRecord {
   subject: string;
@@ -37,6 +37,8 @@ export class ReputationClient {
 
   /** Get the reputation record for a subject. */
   async getReputation(callerAddress: string, subjectAddress: string, options?: CallOptions): Promise<ReputationRecord> {
+    validateStellarAddress(callerAddress);
+    validateStellarAddress(subjectAddress);
     const account = await this.server.getAccount(callerAddress);
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
@@ -80,6 +82,9 @@ export class ReputationClient {
     limit = 20,
     options?: CallOptions
   ): Promise<ScoreHistoryEntry[]> {
+    validateStellarAddress(callerAddress);
+    validateStellarAddress(subjectAddress);
+    validateStellarAddress(reporterAddress);
     const account = await this.server.getAccount(callerAddress);
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
@@ -115,6 +120,8 @@ export class ReputationClient {
     subjectAddress: string,
     options?: CallOptions
   ): Promise<boolean> {
+    validateStellarAddress(callerAddress);
+    validateStellarAddress(subjectAddress);
     const account = await this.server.getAccount(callerAddress);
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
@@ -147,6 +154,8 @@ export class ReputationClient {
     minReporters: number,
     options?: CallOptions
   ): Promise<boolean> {
+    validateStellarAddress(callerAddress);
+    validateStellarAddress(subjectAddress);
     const account = await this.server.getAccount(callerAddress);
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
