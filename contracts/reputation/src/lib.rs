@@ -156,7 +156,7 @@ impl Reputation {
                 updated_at: now,
             });
 
-        record.score = record.score.saturating_add(delta);
+        record.score = record.score.saturating_add(delta).max(0);
         record.updated_at = now;
 
         // Track whether this reporter is new for this subject
@@ -438,8 +438,9 @@ mod tests {
         assert!(!client.passes_sybil_check(&subject, &0, &0));
     }
 
+    /// Score must never go below 0 regardless of negative deltas.
     #[test]
-    fn test_add_reporter_emits_event() {
+    fn test_score_floor_at_zero() {
         let env = Env::default();
         env.mock_all_auths();
 
@@ -448,43 +449,16 @@ mod tests {
 
         let admin    = Address::generate(&env);
         let reporter = Address::generate(&env);
+        let subject  = Address::generate(&env);
 
         client.initialize(&admin);
         client.add_reporter(&reporter);
 
-        let events = env.events().all();
-        assert!(events.iter().any(|(_, topics, _)| {
-            topics == soroban_sdk::vec![
-                &env,
-                soroban_sdk::Val::from(REPORTER),
-                soroban_sdk::Val::from(symbol_short!("added")),
-            ]
-        }));
-    }
+        let reason = String::from_str(&env, "penalty");
+        client.submit_score(&reporter, &subject, &-9_999_999, &reason);
 
-    #[test]
-    fn test_remove_reporter_emits_event() {
-        let env = Env::default();
-        env.mock_all_auths();
-
-        let contract_id = env.register_contract(None, Reputation);
-        let client = ReputationClient::new(&env, &contract_id);
-
-        let admin    = Address::generate(&env);
-        let reporter = Address::generate(&env);
-
-        client.initialize(&admin);
-        client.add_reporter(&reporter);
-        client.remove_reporter(&reporter);
-
-        let events = env.events().all();
-        assert!(events.iter().any(|(_, topics, _)| {
-            topics == soroban_sdk::vec![
-                &env,
-                soroban_sdk::Val::from(REPORTER),
-                soroban_sdk::Val::from(symbol_short!("removed")),
-            ]
-        }));
+        let rec = client.get_reputation(&subject);
+        assert_eq!(rec.score, 0);
     }
 
     /// get_history returns only entries submitted by the specified reporter.

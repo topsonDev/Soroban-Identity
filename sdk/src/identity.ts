@@ -144,7 +144,14 @@ export class IdentityClient {
 
     const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
     if (SorobanRpc.Api.isSimulationError(result)) {
-      throw new Error(`Simulation failed: ${result.error}`);
+      const errMsg = result.error ?? "";
+      if (errMsg.includes("DidDeactivated")) {
+        throw new Error(`DID for address ${controllerAddress} has been deactivated.`);
+      }
+      if (errMsg.includes("DidNotFound")) {
+        throw new Error(`No DID found for address ${controllerAddress}.`);
+      }
+      throw new Error(`Simulation failed: ${errMsg}`);
     }
 
     return scValToNative(
@@ -180,6 +187,44 @@ export class IdentityClient {
       (result as SorobanRpc.Api.SimulateTransactionSuccessResponse)
         .result!.retval
     ) as boolean;
+  }
+
+  /**
+   * Deactivate the DID associated with the given keypair.
+   * Throws if the DID is not found or is already inactive.
+   */
+  async deactivateDid(keypair: Keypair): Promise<void> {
+    const isActive = await this.hasActiveDid(keypair.publicKey());
+    if (!isActive) {
+      throw new Error(
+        `DID for ${keypair.publicKey()} is already inactive or does not exist`
+      );
+    }
+
+    const account = await this.server.getAccount(keypair.publicKey());
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call(
+          "deactivate_did",
+          nativeToScVal(keypair.publicKey(), { type: "address" })
+        )
+      )
+      .setTimeout(this.config.txTimeout ?? 30)
+      .build();
+
+    const prepared = await this.server.prepareTransaction(tx);
+    prepared.sign(keypair);
+
+    const result = await this.server.sendTransaction(prepared);
+    if (result.status !== "PENDING") {
+      throw new Error(`Transaction failed: ${result.status}`);
+    }
+
+    await this.waitForConfirmation(result.hash);
   }
 
   private async waitForConfirmation(

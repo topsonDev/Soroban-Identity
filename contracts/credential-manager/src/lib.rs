@@ -22,7 +22,7 @@ const MAX_ISSUERS: u32 = 100;
 #[derive(Clone, Debug, PartialEq)]
 pub enum ContractError {
     CredentialLimitExceeded,
-    MaxIssuersReached,
+    CredentialAlreadyExpired,
 }
 
 // ── Data types ────────────────────────────────────────────────────────────────
@@ -152,6 +152,10 @@ impl CredentialManager {
 
         if active_count >= MAX_CREDENTIALS_PER_TYPE_PER_ISSUER {
             panic!("CredentialLimitExceeded");
+        }
+
+        if expires_at != 0 && expires_at <= now {
+            panic!("CredentialAlreadyExpired");
         }
 
         let id = Self::generate_id(&env, now);
@@ -353,7 +357,27 @@ mod tests {
         assert!(!client.verify_credential(&cred_id));
     }
 
-    /// issue_credential must panic when the caller is not a registered issuer.
+    /// issue_credential must panic when expires_at is in the past.
+    #[test]
+    #[should_panic]
+    fn test_issue_credential_already_expired() {
+        let (env, _admin, client) = setup();
+
+        let issuer = Address::generate(&env);
+        let subject = Address::generate(&env);
+        client.add_issuer(&issuer);
+
+        let claims: Map<String, String> = Map::new(&env);
+        let sig = Bytes::from_array(&env, &[0u8; 64]);
+        // expires_at is in the past (timestamp 1 is before the default ledger time)
+        let past_expiry = env.ledger().timestamp().saturating_sub(1);
+
+        client.issue_credential(
+            &issuer, &subject, &CredentialType::Kyc, &claims, &sig, &past_expiry,
+        );
+    }
+
+    /// issue_credential must panic when called by an address that did not issue the credential.
     #[test]
     #[should_panic]
     fn test_issue_unauthorized_issuer() {
