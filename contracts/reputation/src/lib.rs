@@ -15,6 +15,7 @@ use soroban_sdk::{
 
 const ADMIN: Symbol    = symbol_short!("ADMIN");
 const REPORTER: Symbol = symbol_short!("REPORTER");
+const DEF_THRESH: Symbol = symbol_short!("DEFTHRESH");
 
 // ── Data types ────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,14 @@ pub struct ReputationRecord {
     pub reporter_count: u32,
     /// Last update timestamp
     pub updated_at: u64,
+}
+
+/// Stored default sybil threshold set by the admin.
+#[contracttype]
+#[derive(Clone)]
+pub struct DefaultThreshold {
+    pub min_score: i64,
+    pub min_reporters: u32,
 }
 
 /// A single score submission from a reporter.
@@ -76,6 +85,26 @@ impl Reputation {
             }
         }
         env.storage().instance().set(&REPORTER, &updated);
+    }
+
+    /// Set the default sybil threshold (admin only).
+    pub fn set_default_threshold(env: Env, min_score: i64, min_reporters: u32) {
+        Self::require_admin(&env);
+        env.storage().instance().set(&DEF_THRESH, &DefaultThreshold { min_score, min_reporters });
+    }
+
+    /// Anti-sybil check using the stored default threshold.
+    pub fn passes_sybil_check_default(env: Env, subject: Address) -> bool {
+        let threshold: DefaultThreshold = env
+            .storage()
+            .instance()
+            .get(&DEF_THRESH)
+            .expect("default threshold not set");
+        let key = Self::record_key(&subject);
+        match env.storage().persistent().get::<(Symbol, Address), ReputationRecord>(&key) {
+            None => false,
+            Some(rec) => rec.score >= threshold.min_score && rec.reporter_count >= threshold.min_reporters,
+        }
     }
 
     // ── Scoring ───────────────────────────────────────────────────────────────

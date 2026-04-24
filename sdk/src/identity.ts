@@ -7,7 +7,8 @@ import {
   nativeToScVal,
   scValToNative,
 } from "@stellar/stellar-sdk";
-import type { DidDocument, SorobanIdentityConfig } from "./types";
+import type { CallOptions, DidDocument, SorobanIdentityConfig } from "./types";
+import { retryWithBackoff } from "./utils";
 
 export class IdentityClient {
   private server: SorobanRpc.Server;
@@ -25,11 +26,13 @@ export class IdentityClient {
    */
   async createDid(
     keypair: Keypair,
-    metadata: Record<string, string> = {}
+    metadata: Record<string, string> = {},
+    options?: CallOptions
   ): Promise<string> {
     const account = await this.server.getAccount(keypair.publicKey());
 
     const metaScVal = nativeToScVal(metadata, { type: "map" });
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -42,13 +45,13 @@ export class IdentityClient {
           metaScVal
         )
       )
-      .setTimeout(this.config.txTimeout ?? 30)
+      .setTimeout(timeout)
       .build();
 
-    const prepared = await this.server.prepareTransaction(tx);
+    const prepared = await retryWithBackoff(() => this.server.prepareTransaction(tx));
     prepared.sign(keypair);
 
-    const result = await this.server.sendTransaction(prepared);
+    const result = await retryWithBackoff(() => this.server.sendTransaction(prepared));
     if (result.status !== "PENDING") {
       throw new Error(`Transaction failed: ${result.status}`);
     }
@@ -73,9 +76,11 @@ export class IdentityClient {
    */
   async updateDid(
     keypair: Keypair,
-    metadata: Record<string, string>
+    metadata: Record<string, string>,
+    options?: CallOptions
   ): Promise<void> {
     const account = await this.server.getAccount(keypair.publicKey());
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -88,13 +93,13 @@ export class IdentityClient {
           nativeToScVal(metadata, { type: "map" })
         )
       )
-      .setTimeout(this.config.txTimeout ?? 30)
+      .setTimeout(timeout)
       .build();
 
-    const prepared = await this.server.prepareTransaction(tx);
+    const prepared = await retryWithBackoff(() => this.server.prepareTransaction(tx));
     prepared.sign(keypair);
 
-    const result = await this.server.sendTransaction(prepared);
+    const result = await retryWithBackoff(() => this.server.sendTransaction(prepared));
     if (result.status !== "PENDING") {
       throw new Error(`Transaction failed: ${result.status}`);
     }
@@ -120,8 +125,9 @@ export class IdentityClient {
   /**
    * Resolve a DID document by controller address.
    */
-  async resolveDid(controllerAddress: string): Promise<DidDocument> {
+  async resolveDid(controllerAddress: string, options?: CallOptions): Promise<DidDocument> {
     const account = await this.server.getAccount(controllerAddress);
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -133,10 +139,10 @@ export class IdentityClient {
           nativeToScVal(controllerAddress, { type: "address" })
         )
       )
-      .setTimeout(this.config.txTimeout ?? 30)
+      .setTimeout(timeout)
       .build();
 
-    const result = await this.server.simulateTransaction(tx);
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
     if (SorobanRpc.Api.isSimulationError(result)) {
       throw new Error(`Simulation failed: ${result.error}`);
     }
@@ -150,8 +156,9 @@ export class IdentityClient {
   /**
    * Check if an address has an active DID.
    */
-  async hasActiveDid(controllerAddress: string): Promise<boolean> {
+  async hasActiveDid(controllerAddress: string, options?: CallOptions): Promise<boolean> {
     const account = await this.server.getAccount(controllerAddress);
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -163,10 +170,10 @@ export class IdentityClient {
           nativeToScVal(controllerAddress, { type: "address" })
         )
       )
-      .setTimeout(this.config.txTimeout ?? 30)
+      .setTimeout(timeout)
       .build();
 
-    const result = await this.server.simulateTransaction(tx);
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
     if (SorobanRpc.Api.isSimulationError(result)) return false;
 
     return scValToNative(

@@ -7,7 +7,8 @@ import {
   nativeToScVal,
   scValToNative,
 } from "@stellar/stellar-sdk";
-import type { Credential, CredentialType, SorobanIdentityConfig, VerifyResult } from "./types";
+import type { CallOptions, Credential, CredentialType, SorobanIdentityConfig, VerifyResult } from "./types";
+import { retryWithBackoff } from "./utils";
 
 export class CredentialClient {
   private server: SorobanRpc.Server;
@@ -28,9 +29,11 @@ export class CredentialClient {
     subjectAddress: string,
     credentialType: CredentialType,
     claims: Record<string, string>,
-    expiresAt = 0
+    expiresAt = 0,
+    options?: CallOptions
   ): Promise<string> {
     const account = await this.server.getAccount(issuerKeypair.publicKey());
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     // Signature is over SHA256(issuer + subject + claims) — simplified here
     const signature = issuerKeypair.sign(
@@ -52,13 +55,13 @@ export class CredentialClient {
           nativeToScVal(expiresAt, { type: "u64" })
         )
       )
-      .setTimeout(this.config.txTimeout ?? 30)
+      .setTimeout(timeout)
       .build();
 
-    const prepared = await this.server.prepareTransaction(tx);
+    const prepared = await retryWithBackoff(() => this.server.prepareTransaction(tx));
     prepared.sign(issuerKeypair);
 
-    const result = await this.server.sendTransaction(prepared);
+    const result = await retryWithBackoff(() => this.server.sendTransaction(prepared));
     if (result.status !== "PENDING") {
       throw new Error(`Transaction failed: ${result.status}`);
     }
@@ -75,10 +78,12 @@ export class CredentialClient {
    */
   async verifyCredential(
     callerAddress: string,
-    credentialId: string
+    credentialId: string,
+    options?: CallOptions
   ): Promise<VerifyResult> {
     const account = await this.server.getAccount(callerAddress);
     const idBytes = Buffer.from(credentialId, "hex");
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -90,10 +95,10 @@ export class CredentialClient {
           nativeToScVal(idBytes, { type: "bytes" })
         )
       )
-      .setTimeout(this.config.txTimeout ?? 30)
+      .setTimeout(timeout)
       .build();
 
-    const result = await this.server.simulateTransaction(tx);
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
 
     if (SorobanRpc.Api.isSimulationError(result)) {
       const error: string = (result as { error: string }).error ?? "";
@@ -130,11 +135,12 @@ export class CredentialClient {
    */
   async getCredentialsBySubject(
     callerAddress: string,
-    subjectAddress: string
+    subjectAddress: string,
+    options?: CallOptions
   ): Promise<Credential[]> {
     const account = await this.server.getAccount(callerAddress);
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
-    // Fetch the list of credential IDs for the subject
     const idsTx = new TransactionBuilder(account, {
       fee: BASE_FEE,
       networkPassphrase: this.config.networkPassphrase,
@@ -145,10 +151,10 @@ export class CredentialClient {
           nativeToScVal(subjectAddress, { type: "address" })
         )
       )
-      .setTimeout(this.config.txTimeout ?? 30)
+      .setTimeout(timeout)
       .build();
 
-    const idsResult = await this.server.simulateTransaction(idsTx);
+    const idsResult = await retryWithBackoff(() => this.server.simulateTransaction(idsTx));
     if (SorobanRpc.Api.isSimulationError(idsResult)) {
       throw new Error(`Simulation failed: ${idsResult.error}`);
     }
@@ -160,59 +166,11 @@ export class CredentialClient {
 
     if (!ids || ids.length === 0) return [];
 
-    // Resolve each credential by ID
-    const credentials = await Promise.all(
+    return Promise.all(
       ids.map((raw) =>
-        this.getCredential(callerAddress, Buffer.from(raw).toString("hex"))
+        this.getCredential(callerAddress, Buffer.from(raw).toString("hex"), options)
       )
     );
-
-    return credentials;
-  }
-
-  /**
-   * Get all credentials issued to a subject address.
-   */
-  async getCredentialsBySubject(
-    callerAddress: string,
-    subjectAddress: string
-  ): Promise<Credential[]> {
-    const account = await this.server.getAccount(callerAddress);
-
-    // Fetch the list of credential IDs for the subject
-    const idsTx = new TransactionBuilder(account, {
-      fee: BASE_FEE,
-      networkPassphrase: this.config.networkPassphrase,
-    })
-      .addOperation(
-        this.contract.call(
-          "get_subject_credentials",
-          nativeToScVal(subjectAddress, { type: "address" })
-        )
-      )
-      .setTimeout(this.config.txTimeout ?? 30)
-      .build();
-
-    const idsResult = await this.server.simulateTransaction(idsTx);
-    if (SorobanRpc.Api.isSimulationError(idsResult)) {
-      throw new Error(`Simulation failed: ${idsResult.error}`);
-    }
-
-    const ids = scValToNative(
-      (idsResult as SorobanRpc.Api.SimulateTransactionSuccessResponse)
-        .result!.retval
-    ) as Uint8Array[];
-
-    if (!ids || ids.length === 0) return [];
-
-    // Resolve each credential by ID
-    const credentials = await Promise.all(
-      ids.map((raw) =>
-        this.getCredential(callerAddress, Buffer.from(raw).toString("hex"))
-      )
-    );
-
-    return credentials;
   }
 
   /**
@@ -220,10 +178,12 @@ export class CredentialClient {
    */
   async getCredential(
     callerAddress: string,
-    credentialId: string
+    credentialId: string,
+    options?: CallOptions
   ): Promise<Credential> {
     const account = await this.server.getAccount(callerAddress);
     const idBytes = Buffer.from(credentialId, "hex");
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -235,10 +195,10 @@ export class CredentialClient {
           nativeToScVal(idBytes, { type: "bytes" })
         )
       )
-      .setTimeout(this.config.txTimeout ?? 30)
+      .setTimeout(timeout)
       .build();
 
-    const result = await this.server.simulateTransaction(tx);
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
     if (SorobanRpc.Api.isSimulationError(result)) {
       throw new Error(`Simulation failed: ${result.error}`);
     }
