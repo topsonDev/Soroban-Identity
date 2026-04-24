@@ -121,7 +121,10 @@ export default function CredentialsPanel({ wallet }: Props) {
       const mockId = Array.from(crypto.getRandomValues(new Uint8Array(32)))
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
-      setIssueResult(`Credential issued.\nID: ${mockId}`);
+      const mockFee = 100;
+      setIssueResult(
+        `Credential issued.\nID: ${mockId}\nEstimated fee: ${mockFee} stroops (${(mockFee / 10_000_000).toFixed(7)} XLM)`
+      );
     } catch (e: unknown) {
       setIssueResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {

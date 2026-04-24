@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import IdentityPanel from "./components/IdentityPanel";
 import CredentialsPanel from "./components/CredentialsPanel";
 import WalletButton from "./components/WalletButton";
@@ -27,19 +28,29 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("identity");
   const wallet = useWallet();
   const [isDark, toggleDark] = useDarkMode();
+  const { t, i18n } = useTranslation();
+
+  const toggleLang = () => {
+    const next = i18n.language === "en" ? "es" : "en";
+    i18n.changeLanguage(next);
+    localStorage.setItem("lang", next);
+  };
 
   return (
     <div className="container">
       <header style={{ position: "relative" }}>
-        <h1>Soroban Identity</h1>
-        <p>Decentralized Identity for a Trustless World</p>
+        <h1>{t("app.title")}</h1>
+        <p>{t("app.subtitle")}</p>
         <div style={{ position: "absolute", top: "1rem", right: 0, display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <button className="theme-toggle" onClick={toggleLang} aria-label="Switch language">
+            {i18n.language === "en" ? "ES" : "EN"}
+          </button>
           <button
             className="theme-toggle"
             onClick={toggleDark}
             aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
           >
-            {isDark ? "☀ Light" : "☾ Dark"}
+            {isDark ? t("app.lightMode") : t("app.darkMode")}
           </button>
           <WalletButton wallet={wallet} />
         </div>
@@ -50,13 +61,13 @@ export default function App() {
           className={`tab ${tab === "identity" ? "active" : ""}`}
           onClick={() => setTab("identity")}
         >
-          Identity (DID)
+          {t("tabs.identity")}
         </button>
         <button
           className={`tab ${tab === "credentials" ? "active" : ""}`}
           onClick={() => setTab("credentials")}
         >
-          Credentials
+          {t("tabs.credentials")}
         </button>
       </div>
 

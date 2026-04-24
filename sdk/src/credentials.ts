@@ -7,7 +7,7 @@ import {
   nativeToScVal,
   scValToNative,
 } from "@stellar/stellar-sdk";
-import type { CallOptions, Credential, CredentialType, SorobanIdentityConfig, VerifyResult } from "./types";
+import type { CallOptions, Credential, CredentialType, SorobanIdentityConfig, VerifyResult, WriteResult } from "./types";
 import { retryWithBackoff } from "./utils";
 
 export class CredentialClient {
@@ -23,6 +23,8 @@ export class CredentialClient {
 
   /**
    * Issue a credential to a subject. Caller must be a registered issuer.
+   * @param signatureHex Optional pre-computed 64-byte signature as a 128-char hex string.
+   *                     If omitted, the signature is derived from issuerKeypair.
    */
   async issueCredential(
     issuerKeypair: Keypair,
@@ -30,15 +32,26 @@ export class CredentialClient {
     credentialType: CredentialType,
     claims: Record<string, string>,
     expiresAt = 0,
-    options?: CallOptions
-  ): Promise<string> {
+    options?: CallOptions,
+    signatureHex?: string
+  ): Promise<{ credentialId: string } & WriteResult> {
+    if (signatureHex !== undefined) {
+      if (!/^[0-9a-fA-F]{128}$/.test(signatureHex)) {
+        throw new Error(
+          "InvalidSignatureFormat: signature must be a 128-character hex string (64 bytes)"
+        );
+      }
+    }
+
     const account = await this.server.getAccount(issuerKeypair.publicKey());
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     // Signature is over SHA256(issuer + subject + claims) — simplified here
-    const signature = issuerKeypair.sign(
-      Buffer.from(JSON.stringify({ subjectAddress, claims }))
-    );
+    const signature = signatureHex
+      ? Buffer.from(signatureHex, "hex")
+      : issuerKeypair.sign(
+          Buffer.from(JSON.stringify({ subjectAddress, claims }))
+        );
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -51,7 +64,7 @@ export class CredentialClient {
           nativeToScVal(subjectAddress, { type: "address" }),
           nativeToScVal(credentialType, { type: "symbol" }),
           nativeToScVal(claims, { type: "map" }),
-          nativeToScVal(Buffer.from(signature), { type: "bytes" }),
+          nativeToScVal(signature, { type: "bytes" }),
           nativeToScVal(expiresAt, { type: "u64" })
         )
       )
@@ -59,6 +72,8 @@ export class CredentialClient {
       .build();
 
     const prepared = await retryWithBackoff(() => this.server.prepareTransaction(tx));
+    const estimatedFee = parseInt(prepared.fee, 10);
+    const estimatedFeeXlm = (estimatedFee / 10_000_000).toFixed(7);
     prepared.sign(issuerKeypair);
 
     const result = await retryWithBackoff(() => this.server.sendTransaction(prepared));
@@ -69,7 +84,8 @@ export class CredentialClient {
     const confirmed = await this.waitForConfirmation(result.hash);
     // Returns BytesN<32> — encode as hex
     const raw = scValToNative(confirmed.returnValue!) as Uint8Array;
-    return Buffer.from(raw).toString("hex");
+    const credentialId = Buffer.from(raw).toString("hex");
+    return { credentialId, estimatedFee, estimatedFeeXlm };
   }
 
   /**

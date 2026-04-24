@@ -7,7 +7,7 @@ import {
   nativeToScVal,
   scValToNative,
 } from "@stellar/stellar-sdk";
-import type { CallOptions, SorobanIdentityConfig } from "./types";
+import type { CallOptions, SorobanIdentityConfig, WriteResult } from "./types";
 import { retryWithBackoff } from "./utils";
 
 export interface ReputationRecord {
@@ -180,7 +180,7 @@ export class ReputationClient {
     delta: number,
     reason: string,
     options?: CallOptions
-  ): Promise<void> {
+  ): Promise<WriteResult> {
     const account = await this.server.getAccount(reporterKeypair.publicKey());
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
@@ -201,11 +201,14 @@ export class ReputationClient {
       .build();
 
     const prepared = await retryWithBackoff(() => this.server.prepareTransaction(tx));
+    const estimatedFee = parseInt(prepared.fee, 10);
+    const estimatedFeeXlm = (estimatedFee / 10_000_000).toFixed(7);
     prepared.sign(reporterKeypair);
 
     const result = await retryWithBackoff(() => this.server.sendTransaction(prepared));
     if (result.status !== "PENDING") {
       throw new Error(`Transaction failed: ${result.status}`);
     }
+    return { estimatedFee, estimatedFeeXlm };
   }
 }
