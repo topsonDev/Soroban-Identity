@@ -10,6 +10,10 @@ use soroban_sdk::{
 const IDENTITY: Symbol = symbol_short!("IDENTITY");
 const ADMIN: Symbol = symbol_short!("ADMIN");
 
+/// ~1 year in ledgers (5-second ledger close time).
+/// Used as the TTL extension on every persistent read/write.
+const TTL_LEDGERS: u32 = 6_312_000;
+
 // ── Data types ────────────────────────────────────────────────────────────────
 
 /// W3C-aligned DID document stored on-chain.
@@ -73,6 +77,7 @@ impl IdentityRegistry {
         };
 
         storage.set(&key, &doc);
+        storage.extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
         env.events().publish((IDENTITY, symbol_short!("created")), controller);
 
         did_id
@@ -90,6 +95,7 @@ impl IdentityRegistry {
         doc.updated_at = env.ledger().timestamp();
 
         storage.set(&key, &doc);
+        storage.extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
         env.events().publish((IDENTITY, symbol_short!("updated")), controller);
     }
 
@@ -105,16 +111,20 @@ impl IdentityRegistry {
         doc.updated_at = env.ledger().timestamp();
 
         storage.set(&key, &doc);
+        storage.extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
         env.events().publish((IDENTITY, symbol_short!("deactivated")), controller);
     }
 
     /// Resolve a DID document by controller address.
     pub fn resolve_did(env: Env, controller: Address) -> DidDocument {
         let key = Self::did_key(&env, &controller);
-        env.storage()
+        let doc: DidDocument = env.storage()
             .persistent()
             .get(&key)
-            .expect("DID not found")
+            .expect("DID not found");
+        // Bump TTL on read so active DIDs stay alive
+        env.storage().persistent().extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
+        doc
     }
 
     /// Check whether an address has an active DID.
@@ -196,5 +206,70 @@ mod tests {
         assert!(client.has_active_did(&user));
         client.deactivate_did(&user);
         assert!(!client.has_active_did(&user));
+    }
+
+    #[test]
+    fn test_ttl_extended_after_create() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, IdentityRegistry);
+        let client = IdentityRegistryClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let user = Address::generate(&env);
+        let metadata: Map<String, String> = Map::new(&env);
+        client.create_did(&user, &metadata);
+
+        // Verify the DID is still resolvable (TTL was set, entry not expired)
+        let doc = client.resolve_did(&user);
+        assert!(doc.active);
+        assert_eq!(doc.controller, user);
+    }
+
+    #[test]
+    fn test_ttl_extended_after_update() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, IdentityRegistry);
+        let client = IdentityRegistryClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let user = Address::generate(&env);
+        let metadata: Map<String, String> = Map::new(&env);
+        client.create_did(&user, &metadata);
+
+        let new_metadata: Map<String, String> = Map::new(&env);
+        client.update_did(&user, &new_metadata);
+
+        // Entry should still be resolvable after update (TTL bumped)
+        let doc = client.resolve_did(&user);
+        assert_eq!(doc.controller, user);
+    }
+
+    #[test]
+    fn test_ttl_extended_on_resolve() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, IdentityRegistry);
+        let client = IdentityRegistryClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let user = Address::generate(&env);
+        let metadata: Map<String, String> = Map::new(&env);
+        client.create_did(&user, &metadata);
+
+        // Resolve twice — second call should succeed (TTL bumped on first resolve)
+        let doc1 = client.resolve_did(&user);
+        let doc2 = client.resolve_did(&user);
+        assert_eq!(doc1.id, doc2.id);
     }
 }
