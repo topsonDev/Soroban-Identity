@@ -28,6 +28,7 @@ export default function IdentityPanel({ wallet }: Props) {
   // resolveAddress is considered "loaded" once a resolve has succeeded
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
   const [showQr, setShowQr] = useState(false);
+  const [resolvedDoc, setResolvedDoc] = useState<object | null>(null);
 
   const handleResolve = async () => {
     if (!resolveAddress.trim()) return;
@@ -47,6 +48,7 @@ export default function IdentityPanel({ wallet }: Props) {
         active: true,
       };
       setResolveResult(JSON.stringify(mock, null, 2));
+      setResolvedDoc(mock);
 
       // Fetch reputation alongside DID resolution
       setReputationLoading(true);
@@ -69,9 +71,21 @@ export default function IdentityPanel({ wallet }: Props) {
     } catch (e: unknown) {
       setResolveResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
       setResolvedAddress(null);
+      setResolvedDoc(null);
     } finally {
       setResolving(false);
     }
+  };
+
+  const handleExportDid = () => {
+    if (!resolvedDoc) return;
+    const blob = new Blob([JSON.stringify(resolvedDoc, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'did-document.json';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleCreate = async () => {
@@ -127,6 +141,13 @@ export default function IdentityPanel({ wallet }: Props) {
           <div style={{ marginTop: '0.75rem' }}>
             <button onClick={() => setShowQr((v) => !v)}>
               {showQr ? 'Hide QR Code' : 'Show QR Code'}
+            </button>
+            <button
+              onClick={handleExportDid}
+              disabled={!resolvedDoc}
+              style={{ marginLeft: '0.5rem' }}
+            >
+              Export JSON
             </button>
             {showQr && (
               <div style={{ marginTop: '0.75rem', display: 'inline-block', background: '#fff', padding: '0.5rem', borderRadius: '0.5rem' }}>
