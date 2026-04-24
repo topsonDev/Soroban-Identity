@@ -57,6 +57,20 @@ impl IdentityRegistry {
         env.storage().instance().set(&ADMIN, &admin);
     }
 
+    /// Transfer admin rights to a new address. Only the current admin can call this.
+    pub fn transfer_admin(env: Env, current_admin: Address, new_admin: Address) {
+        current_admin.require_auth();
+        let stored: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
+        if stored != current_admin {
+            panic!("not the admin");
+        }
+        env.storage().instance().set(&ADMIN, &new_admin);
+        env.events().publish(
+            (ADMIN, symbol_short!("transfer")),
+            (current_admin, new_admin),
+        );
+    }
+
     // ── DID management ────────────────────────────────────────────────────────
 
     /// Create a new DID for the caller.

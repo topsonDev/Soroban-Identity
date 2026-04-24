@@ -14,6 +14,8 @@ const IDSEQ: Symbol = symbol_short!("IDSEQ");
 
 const MAX_CREDENTIALS_PER_TYPE_PER_ISSUER: u32 = 5;
 
+const MAX_ISSUERS: u32 = 100;
+
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -75,11 +77,28 @@ impl CredentialManager {
         env.storage().instance().set(&ADMIN, &admin);
     }
 
+    /// Transfer admin rights to a new address. Only the current admin can call this.
+    pub fn transfer_admin(env: Env, current_admin: Address, new_admin: Address) {
+        current_admin.require_auth();
+        let stored: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
+        if stored != current_admin {
+            panic!("not the admin");
+        }
+        env.storage().instance().set(&ADMIN, &new_admin);
+        env.events().publish(
+            (ADMIN, symbol_short!("transfer")),
+            (current_admin, new_admin),
+        );
+    }
+
     /// Register a trusted issuer (admin only).
     pub fn add_issuer(env: Env, issuer: Address) {
         Self::require_admin(&env);
         let mut issuers = Self::get_issuers(&env);
         if !issuers.contains(&issuer) {
+            if issuers.len() >= MAX_ISSUERS {
+                panic!("MaxIssuersReached");
+            }
             issuers.push_back(issuer.clone());
             env.storage().instance().set(&ISSUER, &issuers);
             env.events().publish((ISSUER, symbol_short!("added")), issuer);
@@ -454,5 +473,42 @@ mod tests {
         assert_eq!(cred.credential_type, CredentialType::Achievement);
         assert_eq!(cred.expires_at, expires_at);
         assert!(!cred.revoked);
+    }
+
+    #[test]
+    fn test_transfer_admin_authorized() {
+        let (env, admin, client) = setup();
+        let new_admin = Address::generate(&env);
+
+        client.transfer_admin(&admin, &new_admin);
+
+        // new_admin can now add an issuer
+        let issuer = Address::generate(&env);
+        client.add_issuer(&issuer);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_transfer_admin_unauthorized() {
+        let (env, _admin, client) = setup();
+        let attacker  = Address::generate(&env);
+        let new_admin = Address::generate(&env);
+
+        client.transfer_admin(&attacker, &new_admin);
+    }
+
+    /// add_issuer must panic with MaxIssuersReached once MAX_ISSUERS (100) are registered.
+    #[test]
+    #[should_panic]
+    fn test_max_issuers_cap() {
+        let (env, _admin, client) = setup();
+
+        // Register exactly MAX_ISSUERS (100) unique issuers
+        for _ in 0..100 {
+            client.add_issuer(&Address::generate(&env));
+        }
+
+        // The 101st add must panic
+        client.add_issuer(&Address::generate(&env));
     }
 }

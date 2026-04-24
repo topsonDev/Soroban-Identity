@@ -219,6 +219,7 @@ cd contracts && cargo build --target wasm32-unknown-unknown --release
 # 3. Deploy to testnet (set your secret key first)
 export STELLAR_SECRET_KEY=S...
 bash scripts/deploy.sh
+# Contract IDs are saved to deployed.env in the repo root (git-ignored)
 
 # 4. Install and run the frontend
 cd frontend && npm install && npm run dev
