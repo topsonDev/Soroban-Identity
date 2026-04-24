@@ -1,3 +1,5 @@
+import { StrKey } from "@stellar/stellar-sdk";
+
 /**
  * Retries an async function with exponential backoff on transient network errors.
  * Contract-level errors (non-network) are NOT retried.
@@ -39,4 +41,14 @@ function isTransientError(err: unknown): boolean {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => (globalThis as unknown as { setTimeout: (fn: () => void, ms: number) => void }).setTimeout(resolve, ms));
+}
+
+/**
+ * Validates a Stellar address using StrKey.
+ * Throws an InvalidAddress error with a descriptive message if the address is invalid.
+ */
+export function validateStellarAddress(address: string): void {
+  if (!StrKey.isValidEd25519PublicKey(address)) {
+    throw new Error(`InvalidAddress: "${address}" is not a valid Stellar address`);
+  }
 }

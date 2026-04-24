@@ -1,7 +1,7 @@
 export { IdentityClient } from "./identity";
 export { CredentialClient } from "./credentials";
 export { ReputationClient } from "./reputation";
-export { retryWithBackoff } from "./utils";
+export { retryWithBackoff, validateStellarAddress } from "./utils";
 export type {
   DidDocument,
   Credential,

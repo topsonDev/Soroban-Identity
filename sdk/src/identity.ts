@@ -8,7 +8,7 @@ import {
   scValToNative,
 } from "@stellar/stellar-sdk";
 import type { CallOptions, DidDocument, SorobanIdentityConfig, WriteResult } from "./types";
-import { retryWithBackoff } from "./utils";
+import { retryWithBackoff, validateStellarAddress } from "./utils";
 
 export class IdentityClient {
   private server: SorobanRpc.Server;
@@ -130,6 +130,7 @@ export class IdentityClient {
    * Resolve a DID document by controller address.
    */
   async resolveDid(controllerAddress: string, options?: CallOptions): Promise<DidDocument> {
+    validateStellarAddress(controllerAddress);
     const account = await this.server.getAccount(controllerAddress);
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
@@ -168,6 +169,7 @@ export class IdentityClient {
    * Check if an address has an active DID.
    */
   async hasActiveDid(controllerAddress: string, options?: CallOptions): Promise<boolean> {
+    validateStellarAddress(controllerAddress);
     const account = await this.server.getAccount(controllerAddress);
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
