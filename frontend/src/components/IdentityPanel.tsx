@@ -119,7 +119,7 @@ export default function IdentityPanel({ wallet }: Props) {
         {resolveResult && <pre className="result">{resolveResult}</pre>}
 
         {reputationLoading && (
-          <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: '1rem' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '1rem' }}>
             Loading reputation…
           </p>
         )}
@@ -127,9 +127,9 @@ export default function IdentityPanel({ wallet }: Props) {
         {!reputationLoading && reputation && (
           <div
             className="card"
-            style={{ marginTop: '1rem', background: '#1e1b4b', border: '1px solid #4c1d95' }}
+            style={{ marginTop: '1rem', background: 'var(--card-bg-accent)', border: '1px solid var(--card-border-accent)' }}
           >
-            <h3 style={{ marginBottom: '0.5rem', color: '#a78bfa' }}>Reputation</h3>
+            <h3 style={{ marginBottom: '0.5rem', color: 'var(--accent-light)' }}>Reputation</h3>
             <p>Score: {reputation.score}</p>
             <p>Reporters: {reputation.reporterCount}</p>
             <p>
@@ -142,10 +142,10 @@ export default function IdentityPanel({ wallet }: Props) {
         {!reputationLoading && resolveResult && !reputation && (
           <div
             className="card"
-            style={{ marginTop: '1rem', background: '#1e1b4b', border: '1px solid #334155' }}
+            style={{ marginTop: '1rem', background: 'var(--card-bg-accent)', border: '1px solid var(--border-input)' }}
           >
-            <h3 style={{ marginBottom: '0.5rem', color: '#94a3b8' }}>Reputation</h3>
-            <p style={{ color: '#64748b', fontSize: '0.85rem' }}>
+            <h3 style={{ marginBottom: '0.5rem', color: 'var(--text-muted)' }}>Reputation</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
               No reputation record found for this address.
             </p>
           </div>
@@ -156,15 +156,15 @@ export default function IdentityPanel({ wallet }: Props) {
         <h2>Anti-Sybil Check</h2>
         {resolvedAddress ? (
           <>
-            <p style={{ color: "#94a3b8", fontSize: "0.85rem", marginBottom: "1rem" }}>
-              Checking{" "}
-              <span style={{ color: "#a78bfa" }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+              Checking{' '}
+              <span style={{ color: 'var(--accent-light)' }}>
                 {resolvedAddress.slice(0, 6)}…{resolvedAddress.slice(-4)}
               </span>
             </p>
-            <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem" }}>
+            <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
               <div style={{ flex: 1 }}>
-                <label style={{ display: "block", color: "#94a3b8", fontSize: "0.8rem", marginBottom: "0.25rem" }}>
+                <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '0.25rem' }}>
                   Min Score
                 </label>
                 <input
@@ -172,11 +172,11 @@ export default function IdentityPanel({ wallet }: Props) {
                   min={0}
                   value={minScore}
                   onChange={(e) => setMinScore(e.target.value)}
-                  style={{ width: "100%" }}
+                  style={{ width: '100%' }}
                 />
               </div>
               <div style={{ flex: 1 }}>
-                <label style={{ display: "block", color: "#94a3b8", fontSize: "0.8rem", marginBottom: "0.25rem" }}>
+                <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '0.25rem' }}>
                   Min Reporters
                 </label>
                 <input
@@ -184,32 +184,32 @@ export default function IdentityPanel({ wallet }: Props) {
                   min={1}
                   value={minReporters}
                   onChange={(e) => setMinReporters(e.target.value)}
-                  style={{ width: "100%" }}
+                  style={{ width: '100%' }}
                 />
               </div>
             </div>
             <button onClick={handleSybilCheck} disabled={checkingsSybil}>
-              {checkingsSybil ? "Checking…" : "Run Sybil Check"}
+              {checkingsSybil ? 'Checking…' : 'Run Sybil Check'}
             </button>
             {sybilResult !== null && (
               <div
                 style={{
-                  marginTop: "1rem",
-                  padding: "0.6rem 1rem",
-                  borderRadius: "0.5rem",
+                  marginTop: '1rem',
+                  padding: '0.6rem 1rem',
+                  borderRadius: '0.5rem',
                   fontWeight: 600,
-                  fontSize: "0.95rem",
-                  background: sybilResult ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
-                  color: sybilResult ? "#4ade80" : "#f87171",
-                  border: `1px solid ${sybilResult ? "#4ade80" : "#f87171"}`,
+                  fontSize: '0.95rem',
+                  background: `var(${sybilResult ? '--sybil-pass-bg' : '--sybil-fail-bg'})`,
+                  color: `var(${sybilResult ? '--sybil-pass-text' : '--sybil-fail-text'})`,
+                  border: `1px solid var(${sybilResult ? '--sybil-pass-border' : '--sybil-fail-border'})`,
                 }}
               >
-                {sybilResult ? "✓ Passes sybil check" : "✗ Fails sybil check"}
+                {sybilResult ? '✓ Passes sybil check' : '✗ Fails sybil check'}
               </div>
             )}
           </>
         ) : (
-          <p style={{ color: "#94a3b8", fontSize: "0.85rem" }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
             Resolve a DID above to run the anti-sybil check.
           </p>
         )}
@@ -219,9 +219,9 @@ export default function IdentityPanel({ wallet }: Props) {
         <h2>Create DID</h2>
         {wallet.connected && wallet.publicKey ? (
           <>
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '1rem' }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
               Connected as{' '}
-              <span style={{ color: '#a78bfa' }}>
+              <span style={{ color: 'var(--accent-light)' }}>
                 {wallet.publicKey.slice(0, 6)}…{wallet.publicKey.slice(-4)}
               </span>
             </p>
@@ -230,7 +230,7 @@ export default function IdentityPanel({ wallet }: Props) {
             </button>
           </>
         ) : (
-          <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
             Connect your Freighter wallet to create a new on-chain DID.
           </p>
         )}

@@ -10,12 +10,23 @@ use soroban_sdk::{
 const ADMIN: Symbol = symbol_short!("ADMIN");
 const ISSUER: Symbol = symbol_short!("ISSUER");
 const CRED: Symbol = symbol_short!("CRED");
+const IDSEQ: Symbol = symbol_short!("IDSEQ");
+
+const MAX_CREDENTIALS_PER_TYPE_PER_ISSUER: u32 = 5;
+
+// ── Errors ────────────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum ContractError {
+    CredentialLimitExceeded,
+}
 
 // ── Data types ────────────────────────────────────────────────────────────────
 
 /// Credential types supported by the protocol.
 #[contracttype]
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum CredentialType {
     Kyc,
     Reputation,
@@ -78,10 +89,12 @@ impl CredentialManager {
     pub fn remove_issuer(env: Env, issuer: Address) {
         Self::require_admin(&env);
         let issuers = Self::get_issuers(&env);
-        let updated: Vec<Address> = issuers
-            .iter()
-            .filter(|i| i != issuer)
-            .collect();
+        let mut updated = Vec::new(&env);
+        for i in issuers.iter() {
+            if i != issuer {
+                updated.push_back(i);
+            }
+        }
         env.storage().instance().set(&ISSUER, &updated);
     }
 
@@ -100,14 +113,34 @@ impl CredentialManager {
         issuer.require_auth();
         Self::require_issuer(&env, &issuer);
 
+        // Enforce per-issuer-per-type-per-subject limit
+        let type_key = Self::issuer_type_key(&issuer, &subject, &credential_type);
+        let existing: Vec<BytesN<32>> = env
+            .storage()
+            .persistent()
+            .get(&type_key)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        // Count only active (non-revoked, non-expired) credentials
         let now = env.ledger().timestamp();
-        let id = Self::generate_id(&env, &issuer, &subject, now);
+        let active_count = existing.iter().filter(|id| {
+            match env.storage().persistent().get::<(Symbol, BytesN<32>), Credential>(&Self::cred_key(id)) {
+                None => false,
+                Some(c) => !c.revoked && (c.expires_at == 0 || c.expires_at > now),
+            }
+        }).count() as u32;
+
+        if active_count >= MAX_CREDENTIALS_PER_TYPE_PER_ISSUER {
+            panic!("CredentialLimitExceeded");
+        }
+
+        let id = Self::generate_id(&env, now);
 
         let credential = Credential {
             id: id.clone(),
             subject: subject.clone(),
             issuer: issuer.clone(),
-            credential_type,
+            credential_type: credential_type.clone(),
             claims,
             signature,
             issued_at: now,
@@ -115,14 +148,19 @@ impl CredentialManager {
             revoked: false,
         };
 
-        let key = Self::cred_key(&env, &id);
+        let key = Self::cred_key(&id);
         env.storage().persistent().set(&key, &credential);
 
         // Index credential under subject
-        let mut subject_creds = Self::get_subject_credentials(&env, &subject);
+        let mut subject_creds = Self::fetch_subject_creds(&env, &subject);
         subject_creds.push_back(id.clone());
-        let subject_key = Self::subject_key(&env, &subject);
+        let subject_key = Self::subject_key(&subject);
         env.storage().persistent().set(&subject_key, &subject_creds);
+
+        // Index credential under issuer+subject+type
+        let mut type_creds = existing;
+        type_creds.push_back(id.clone());
+        env.storage().persistent().set(&type_key, &type_creds);
 
         env.events().publish((CRED, symbol_short!("issued")), (issuer, subject));
 
@@ -133,7 +171,7 @@ impl CredentialManager {
     pub fn revoke_credential(env: Env, issuer: Address, credential_id: BytesN<32>) {
         issuer.require_auth();
 
-        let key = Self::cred_key(&env, &credential_id);
+        let key = Self::cred_key(&credential_id);
         let mut cred: Credential = env
             .storage()
             .persistent()
@@ -151,8 +189,8 @@ impl CredentialManager {
 
     /// Verify a credential is valid (not revoked, not expired).
     pub fn verify_credential(env: Env, credential_id: BytesN<32>) -> bool {
-        let key = Self::cred_key(&env, &credential_id);
-        match env.storage().persistent().get::<Bytes, Credential>(&key) {
+        let key = Self::cred_key(&credential_id);
+        match env.storage().persistent().get::<(Symbol, BytesN<32>), Credential>(&key) {
             None => false,
             Some(cred) => {
                 if cred.revoked {
@@ -168,7 +206,7 @@ impl CredentialManager {
 
     /// Get a credential by ID.
     pub fn get_credential(env: Env, credential_id: BytesN<32>) -> Credential {
-        let key = Self::cred_key(&env, &credential_id);
+        let key = Self::cred_key(&credential_id);
         env.storage()
             .persistent()
             .get(&key)
@@ -176,12 +214,8 @@ impl CredentialManager {
     }
 
     /// List all credential IDs for a subject.
-    pub fn get_subject_credentials(env: &Env, subject: &Address) -> Vec<BytesN<32>> {
-        let key = Self::subject_key(env, subject);
-        env.storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or_else(|| Vec::new(env))
+    pub fn get_subject_credentials(env: Env, subject: Address) -> Vec<BytesN<32>> {
+        Self::fetch_subject_creds(&env, &subject)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -205,26 +239,36 @@ impl CredentialManager {
             .unwrap_or_else(|| Vec::new(env))
     }
 
-    fn generate_id(env: &Env, issuer: &Address, subject: &Address, timestamp: u64) -> BytesN<32> {
+    fn fetch_subject_creds(env: &Env, subject: &Address) -> Vec<BytesN<32>> {
+        let key = Self::subject_key(subject);
+        env.storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    /// Generate a unique 32-byte credential ID from the current timestamp and
+    /// a per-contract sequence counter to prevent collisions within the same ledger.
+    fn generate_id(env: &Env, timestamp: u64) -> BytesN<32> {
+        let seq: u64 = env.storage().instance().get(&IDSEQ).unwrap_or(0);
+        env.storage().instance().set(&IDSEQ, &(seq + 1));
+
         let mut data = Bytes::new(env);
-        data.extend_from_slice(&issuer.to_string().into_bytes());
-        data.extend_from_slice(&subject.to_string().into_bytes());
         data.extend_from_array(&timestamp.to_be_bytes());
-        env.crypto().sha256(&data)
+        data.extend_from_array(&seq.to_be_bytes());
+        env.crypto().sha256(&data).into()
     }
 
-    fn cred_key(env: &Env, id: &BytesN<32>) -> Bytes {
-        let mut key = Bytes::new(env);
-        key.extend_from_array(&[b'c', b'r', b'e', b'd', b':']);
-        key.extend_from_slice(id.as_ref());
-        key
+    fn cred_key(id: &BytesN<32>) -> (Symbol, BytesN<32>) {
+        (CRED, id.clone())
     }
 
-    fn subject_key(env: &Env, subject: &Address) -> Bytes {
-        let mut key = Bytes::new(env);
-        key.extend_from_array(&[b's', b'u', b'b', b':']);
-        key.extend_from_slice(&subject.to_string().into_bytes());
-        key
+    fn subject_key(subject: &Address) -> (Symbol, Address) {
+        (symbol_short!("sub"), subject.clone())
+    }
+
+    fn issuer_type_key(issuer: &Address, subject: &Address, credential_type: &CredentialType) -> (Symbol, Address, Address, CredentialType) {
+        (symbol_short!("it"), issuer.clone(), subject.clone(), credential_type.clone())
     }
 }
 
@@ -233,7 +277,7 @@ impl CredentialManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Bytes, Env, Map};
+    use soroban_sdk::{testutils::{Address as _, Ledger as _}, Bytes, Env, Map};
 
     fn setup() -> (Env, Address, CredentialManagerClient<'static>) {
         let env = Env::default();
@@ -245,6 +289,7 @@ mod tests {
         (env, admin, client)
     }
 
+    /// issue_credential stores the credential and verify_credential returns true.
     #[test]
     fn test_issue_and_verify() {
         let (env, _admin, client) = setup();
@@ -269,6 +314,7 @@ mod tests {
         assert!(client.verify_credential(&cred_id));
     }
 
+    /// revoke_credential marks the credential revoked; verify_credential returns false.
     #[test]
     fn test_revoke_credential() {
         let (env, _admin, client) = setup();
@@ -285,5 +331,103 @@ mod tests {
 
         client.revoke_credential(&issuer, &cred_id);
         assert!(!client.verify_credential(&cred_id));
+    }
+
+    /// issue_credential must panic when the caller is not a registered issuer.
+    #[test]
+    #[should_panic]
+    fn test_issue_unauthorized_issuer() {
+        let (env, _admin, client) = setup();
+
+        let unauthorized = Address::generate(&env); // NOT registered
+        let subject = Address::generate(&env);
+
+        let claims: Map<String, String> = Map::new(&env);
+        let sig = Bytes::from_array(&env, &[0u8; 64]);
+
+        client.issue_credential(
+            &unauthorized, &subject, &CredentialType::Kyc, &claims, &sig, &0u64,
+        );
+    }
+
+    /// verify_credential returns false once the credential's expiry timestamp has passed.
+    #[test]
+    fn test_verify_expired_credential() {
+        let (env, _admin, client) = setup();
+
+        let issuer = Address::generate(&env);
+        let subject = Address::generate(&env);
+        client.add_issuer(&issuer);
+
+        let claims: Map<String, String> = Map::new(&env);
+        let sig = Bytes::from_array(&env, &[0u8; 64]);
+        let expires_at = env.ledger().timestamp() + 100;
+
+        let cred_id = client.issue_credential(
+            &issuer, &subject, &CredentialType::Kyc, &claims, &sig, &expires_at,
+        );
+
+        // Valid before expiry
+        assert!(client.verify_credential(&cred_id));
+
+        // Advance ledger past expiry
+        env.ledger().with_mut(|li| {
+            li.timestamp = expires_at + 1;
+        });
+
+        // Must be invalid after expiry
+        assert!(!client.verify_credential(&cred_id));
+    }
+
+    /// revoke_credential must panic when called by an address that did not issue the credential.
+    #[test]
+    #[should_panic]
+    fn test_revoke_by_different_issuer() {
+        let (env, _admin, client) = setup();
+
+        let issuer1 = Address::generate(&env);
+        let issuer2 = Address::generate(&env);
+        let subject = Address::generate(&env);
+
+        client.add_issuer(&issuer1);
+        client.add_issuer(&issuer2);
+
+        let claims: Map<String, String> = Map::new(&env);
+        let sig = Bytes::from_array(&env, &[0u8; 64]);
+        let cred_id = client.issue_credential(
+            &issuer1, &subject, &CredentialType::Kyc, &claims, &sig, &0u64,
+        );
+
+        // issuer2 attempts to revoke a credential they did not issue
+        client.revoke_credential(&issuer2, &cred_id);
+    }
+
+    /// get_credential returns all fields exactly as supplied at issuance.
+    #[test]
+    fn test_credential_stored_correctly() {
+        let (env, _admin, client) = setup();
+
+        let issuer = Address::generate(&env);
+        let subject = Address::generate(&env);
+        client.add_issuer(&issuer);
+
+        let mut claims: Map<String, String> = Map::new(&env);
+        claims.set(
+            String::from_str(&env, "name"),
+            String::from_str(&env, "Alice"),
+        );
+        let sig = Bytes::from_array(&env, &[1u8; 64]);
+        let expires_at = 9999u64;
+
+        let cred_id = client.issue_credential(
+            &issuer, &subject, &CredentialType::Achievement, &claims, &sig, &expires_at,
+        );
+
+        let cred = client.get_credential(&cred_id);
+        assert_eq!(cred.issuer, issuer);
+        assert_eq!(cred.subject, subject);
+        assert_eq!(cred.credential_type, CredentialType::Achievement);
+        assert_eq!(cred.expires_at, expires_at);
+        assert!(!cred.revoked);
     }
 }

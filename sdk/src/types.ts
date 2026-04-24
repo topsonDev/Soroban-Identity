@@ -21,6 +21,12 @@ export interface Credential {
   revoked: boolean;
 }
 
+export type VerifyFailReason = "not_found" | "revoked" | "expired" | "unknown";
+
+export type VerifyResult =
+  | { valid: true }
+  | { valid: false; reason: VerifyFailReason };
+
 export interface SorobanIdentityConfig {
   rpcUrl: string;
   networkPassphrase: string;
@@ -29,4 +35,10 @@ export interface SorobanIdentityConfig {
   reputationId: string;
   /** Transaction timeout in seconds. Defaults to 30. */
   txTimeout?: number;
+}
+
+/** Per-call options that override the global config. */
+export interface CallOptions {
+  /** Override transaction timeout in seconds for this call only. */
+  timeoutSeconds?: number;
 }

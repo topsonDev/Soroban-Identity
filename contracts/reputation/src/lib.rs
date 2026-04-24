@@ -8,13 +8,14 @@
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short,
-    Address, Env, Map, Symbol, Vec,
+    Address, Env, Symbol, Vec,
 };
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
 
 const ADMIN: Symbol    = symbol_short!("ADMIN");
 const REPORTER: Symbol = symbol_short!("REPORTER");
+const DEF_THRESH: Symbol = symbol_short!("DEFTHRESH");
 
 // ── Data types ────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,14 @@ pub struct ReputationRecord {
     pub reporter_count: u32,
     /// Last update timestamp
     pub updated_at: u64,
+}
+
+/// Stored default sybil threshold set by the admin.
+#[contracttype]
+#[derive(Clone)]
+pub struct DefaultThreshold {
+    pub min_score: i64,
+    pub min_reporters: u32,
 }
 
 /// A single score submission from a reporter.
@@ -69,8 +78,33 @@ impl Reputation {
     pub fn remove_reporter(env: Env, reporter: Address) {
         Self::require_admin(&env);
         let reporters = Self::get_reporters(&env);
-        let updated: Vec<Address> = reporters.iter().filter(|r| r != reporter).collect();
+        let mut updated = Vec::new(&env);
+        for r in reporters.iter() {
+            if r != reporter {
+                updated.push_back(r);
+            }
+        }
         env.storage().instance().set(&REPORTER, &updated);
+    }
+
+    /// Set the default sybil threshold (admin only).
+    pub fn set_default_threshold(env: Env, min_score: i64, min_reporters: u32) {
+        Self::require_admin(&env);
+        env.storage().instance().set(&DEF_THRESH, &DefaultThreshold { min_score, min_reporters });
+    }
+
+    /// Anti-sybil check using the stored default threshold.
+    pub fn passes_sybil_check_default(env: Env, subject: Address) -> bool {
+        let threshold: DefaultThreshold = env
+            .storage()
+            .instance()
+            .get(&DEF_THRESH)
+            .expect("default threshold not set");
+        let key = Self::record_key(&subject);
+        match env.storage().persistent().get::<(Symbol, Address), ReputationRecord>(&key) {
+            None => false,
+            Some(rec) => rec.score >= threshold.min_score && rec.reporter_count >= threshold.min_reporters,
+        }
     }
 
     // ── Scoring ───────────────────────────────────────────────────────────────
@@ -89,7 +123,7 @@ impl Reputation {
         let now = env.ledger().timestamp();
 
         // Update aggregate record
-        let rec_key = Self::record_key(&env, &subject);
+        let rec_key = Self::record_key(&subject);
         let mut record: ReputationRecord = env
             .storage()
             .persistent()
@@ -105,7 +139,7 @@ impl Reputation {
         record.updated_at = now;
 
         // Track whether this reporter is new for this subject
-        let history_key = Self::history_key(&env, &subject, &reporter);
+        let history_key = Self::history_key(&subject, &reporter);
         let is_new = !env.storage().persistent().has(&history_key);
         if is_new {
             record.reporter_count = record.reporter_count.saturating_add(1);
@@ -134,7 +168,7 @@ impl Reputation {
 
     /// Get the reputation record for a subject.
     pub fn get_reputation(env: Env, subject: Address) -> ReputationRecord {
-        let key = Self::record_key(&env, &subject);
+        let key = Self::record_key(&subject);
         env.storage()
             .persistent()
             .get(&key)
@@ -157,7 +191,7 @@ impl Reputation {
         offset: u32,
         limit: u32,
     ) -> Vec<ScoreEntry> {
-        let key = Self::history_key(&env, &subject, &reporter);
+        let key = Self::history_key(&subject, &reporter);
         let all: Vec<ScoreEntry> = env
             .storage()
             .persistent()
@@ -185,8 +219,8 @@ impl Reputation {
         min_score: i64,
         min_reporters: u32,
     ) -> bool {
-        let key = Self::record_key(&env, &subject);
-        match env.storage().persistent().get::<soroban_sdk::Bytes, ReputationRecord>(&key) {
+        let key = Self::record_key(&subject);
+        match env.storage().persistent().get::<(Symbol, Address), ReputationRecord>(&key) {
             None => false,
             Some(rec) => rec.score >= min_score && rec.reporter_count >= min_reporters,
         }
@@ -212,20 +246,12 @@ impl Reputation {
             .unwrap_or_else(|| Vec::new(env))
     }
 
-    fn record_key(env: &Env, subject: &Address) -> soroban_sdk::Bytes {
-        let mut k = soroban_sdk::Bytes::new(env);
-        k.extend_from_array(&[b'r', b'e', b'c', b':']);
-        k.extend_from_slice(&subject.to_string().into_bytes());
-        k
+    fn record_key(subject: &Address) -> (Symbol, Address) {
+        (symbol_short!("rec"), subject.clone())
     }
 
-    fn history_key(env: &Env, subject: &Address, reporter: &Address) -> soroban_sdk::Bytes {
-        let mut k = soroban_sdk::Bytes::new(env);
-        k.extend_from_array(&[b'h', b':', ]);
-        k.extend_from_slice(&subject.to_string().into_bytes());
-        k.extend_from_array(&[b'|']);
-        k.extend_from_slice(&reporter.to_string().into_bytes());
-        k
+    fn history_key(subject: &Address, reporter: &Address) -> (Symbol, Address, Address) {
+        (symbol_short!("h"), subject.clone(), reporter.clone())
     }
 }
 
@@ -327,5 +353,101 @@ mod tests {
         assert!(client.passes_sybil_check(&subject, &50, &2));
         // requires 3 reporters — should fail
         assert!(!client.passes_sybil_check(&subject, &50, &3));
+    }
+
+    /// submit_score must panic when the reporter is not registered.
+    #[test]
+    #[should_panic]
+    fn test_submit_score_unauthorized_reporter() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin    = Address::generate(&env);
+        let reporter = Address::generate(&env); // never added as reporter
+        let subject  = Address::generate(&env);
+
+        client.initialize(&admin);
+
+        let reason = String::from_str(&env, "unauthorized");
+        client.submit_score(&reporter, &subject, &10, &reason);
+    }
+
+    /// passes_sybil_check returns false when score is below the minimum threshold.
+    #[test]
+    fn test_sybil_check_score_threshold() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin    = Address::generate(&env);
+        let reporter = Address::generate(&env);
+        let subject  = Address::generate(&env);
+
+        client.initialize(&admin);
+        client.add_reporter(&reporter);
+
+        let reason = String::from_str(&env, "activity");
+        client.submit_score(&reporter, &subject, &30, &reason);
+
+        // score=30, reporters=1 — passes with matching thresholds
+        assert!(client.passes_sybil_check(&subject, &30, &1));
+        // score=30 is below min_score=50 — must fail
+        assert!(!client.passes_sybil_check(&subject, &50, &1));
+    }
+
+    /// passes_sybil_check returns false for a subject with no reputation record at all.
+    #[test]
+    fn test_sybil_check_no_record() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let subject = Address::generate(&env); // no history
+        // Even with zero thresholds the contract returns false when no record exists
+        assert!(!client.passes_sybil_check(&subject, &0, &0));
+    }
+
+    /// get_history returns only entries submitted by the specified reporter.
+    #[test]
+    fn test_get_history_per_reporter() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin     = Address::generate(&env);
+        let reporter1 = Address::generate(&env);
+        let reporter2 = Address::generate(&env);
+        let subject   = Address::generate(&env);
+
+        client.initialize(&admin);
+        client.add_reporter(&reporter1);
+        client.add_reporter(&reporter2);
+
+        let r1 = String::from_str(&env, "reporter1 reason");
+        let r2 = String::from_str(&env, "reporter2 reason");
+        client.submit_score(&reporter1, &subject, &10, &r1);
+        client.submit_score(&reporter1, &subject, &20, &r1);
+        client.submit_score(&reporter2, &subject, &99, &r2);
+
+        let h1 = client.get_history(&subject, &reporter1, &0, &10);
+        assert_eq!(h1.len(), 2);
+        assert_eq!(h1.get(0).unwrap().delta, 10);
+        assert_eq!(h1.get(1).unwrap().delta, 20);
+
+        let h2 = client.get_history(&subject, &reporter2, &0, &10);
+        assert_eq!(h2.len(), 1);
+        assert_eq!(h2.get(0).unwrap().delta, 99);
     }
 }

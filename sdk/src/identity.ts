@@ -7,7 +7,8 @@ import {
   nativeToScVal,
   scValToNative,
 } from "@stellar/stellar-sdk";
-import type { DidDocument, SorobanIdentityConfig } from "./types";
+import type { CallOptions, DidDocument, SorobanIdentityConfig } from "./types";
+import { retryWithBackoff } from "./utils";
 
 export class IdentityClient {
   private server: SorobanRpc.Server;
@@ -25,11 +26,13 @@ export class IdentityClient {
    */
   async createDid(
     keypair: Keypair,
-    metadata: Record<string, string> = {}
+    metadata: Record<string, string> = {},
+    options?: CallOptions
   ): Promise<string> {
     const account = await this.server.getAccount(keypair.publicKey());
 
     const metaScVal = nativeToScVal(metadata, { type: "map" });
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -42,26 +45,89 @@ export class IdentityClient {
           metaScVal
         )
       )
-      .setTimeout(this.config.txTimeout ?? 30)
+      .setTimeout(timeout)
       .build();
 
-    const prepared = await this.server.prepareTransaction(tx);
+    const prepared = await retryWithBackoff(() => this.server.prepareTransaction(tx));
     prepared.sign(keypair);
 
-    const result = await this.server.sendTransaction(prepared);
+    const result = await retryWithBackoff(() => this.server.sendTransaction(prepared));
     if (result.status !== "PENDING") {
       throw new Error(`Transaction failed: ${result.status}`);
     }
 
-    const confirmed = await this.waitForConfirmation(result.hash);
+    let confirmed: SorobanRpc.Api.GetSuccessfulTransactionResponse;
+    try {
+      confirmed = await this.waitForConfirmation(result.hash);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("DID already exists")) {
+        throw new Error(
+          `A DID already exists for address ${keypair.publicKey()}. Each address can only have one DID.`
+        );
+      }
+      throw e;
+    }
     return scValToNative(confirmed.returnValue!) as string;
+  }
+
+  /**
+   * Update metadata on an existing DID.
+   */
+  async updateDid(
+    keypair: Keypair,
+    metadata: Record<string, string>,
+    options?: CallOptions
+  ): Promise<void> {
+    const account = await this.server.getAccount(keypair.publicKey());
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call(
+          "update_did",
+          nativeToScVal(keypair.publicKey(), { type: "address" }),
+          nativeToScVal(metadata, { type: "map" })
+        )
+      )
+      .setTimeout(timeout)
+      .build();
+
+    const prepared = await retryWithBackoff(() => this.server.prepareTransaction(tx));
+    prepared.sign(keypair);
+
+    const result = await retryWithBackoff(() => this.server.sendTransaction(prepared));
+    if (result.status !== "PENDING") {
+      throw new Error(`Transaction failed: ${result.status}`);
+    }
+
+    try {
+      await this.waitForConfirmation(result.hash);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("DID not found")) {
+        throw new Error(
+          `No DID found for address ${keypair.publicKey()}. Create one first with createDid.`
+        );
+      }
+      if (msg.includes("require_auth") || msg.includes("not authorized")) {
+        throw new Error(
+          `Address ${keypair.publicKey()} is not the controller of this DID.`
+        );
+      }
+      throw e;
+    }
   }
 
   /**
    * Resolve a DID document by controller address.
    */
-  async resolveDid(controllerAddress: string): Promise<DidDocument> {
+  async resolveDid(controllerAddress: string, options?: CallOptions): Promise<DidDocument> {
     const account = await this.server.getAccount(controllerAddress);
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -73,10 +139,10 @@ export class IdentityClient {
           nativeToScVal(controllerAddress, { type: "address" })
         )
       )
-      .setTimeout(this.config.txTimeout ?? 30)
+      .setTimeout(timeout)
       .build();
 
-    const result = await this.server.simulateTransaction(tx);
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
     if (SorobanRpc.Api.isSimulationError(result)) {
       throw new Error(`Simulation failed: ${result.error}`);
     }
@@ -90,8 +156,9 @@ export class IdentityClient {
   /**
    * Check if an address has an active DID.
    */
-  async hasActiveDid(controllerAddress: string): Promise<boolean> {
+  async hasActiveDid(controllerAddress: string, options?: CallOptions): Promise<boolean> {
     const account = await this.server.getAccount(controllerAddress);
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -103,10 +170,10 @@ export class IdentityClient {
           nativeToScVal(controllerAddress, { type: "address" })
         )
       )
-      .setTimeout(this.config.txTimeout ?? 30)
+      .setTimeout(timeout)
       .build();
 
-    const result = await this.server.simulateTransaction(tx);
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
     if (SorobanRpc.Api.isSimulationError(result)) return false;
 
     return scValToNative(

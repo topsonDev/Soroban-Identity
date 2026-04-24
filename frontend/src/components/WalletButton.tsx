@@ -23,13 +23,13 @@ export default function WalletButton({ wallet }: Props) {
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.25rem", position: "relative" }}>
       {connected && publicKey ? (
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
+          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
             via {walletType === "walletconnect" ? "WalletConnect" : "Freighter"}
           </span>
           <span className="badge badge-green">{short(publicKey)}</span>
           <button
             onClick={disconnect}
-            style={{ background: "transparent", border: "1px solid #334155", color: "#94a3b8", padding: "0.3rem 0.7rem" }}
+            style={{ background: "transparent", border: "1px solid var(--border-input)", color: "var(--text-muted)", padding: "0.3rem 0.7rem" }}
           >
             Disconnect
           </button>
@@ -48,8 +48,8 @@ export default function WalletButton({ wallet }: Props) {
               position: "absolute",
               top: "calc(100% + 0.5rem)",
               right: 0,
-              background: "#1e293b",
-              border: "1px solid #334155",
+              background: "var(--dropdown-bg)",
+              border: "1px solid var(--border-input)",
               borderRadius: "0.5rem",
               padding: "0.5rem",
               display: "flex",
@@ -76,7 +76,7 @@ export default function WalletButton({ wallet }: Props) {
       )}
 
       {error && (
-        <span style={{ fontSize: "0.75rem", color: "#fca5a5" }}>{error}</span>
+        <span style={{ fontSize: "0.75rem", color: "var(--error-text)" }}>{error}</span>
       )}
     </div>
   );

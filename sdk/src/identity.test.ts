@@ -49,6 +49,7 @@ const config: SorobanIdentityConfig = {
   networkPassphrase: 'Test SDF Network ; September 2015',
   identityRegistryId: 'CONTRACT_A',
   credentialManagerId: 'CONTRACT_B',
+  reputationId: 'CONTRACT_C',
 };
 
 describe('IdentityClient', () => {
@@ -110,50 +111,28 @@ describe('IdentityClient', () => {
     expect(result).toBe(false);
   });
 
-  describe('deactivateDid', () => {
-    it('deactivates an active DID successfully', async () => {
-      // hasActiveDid returns true
-      mockIsSimulationError.mockReturnValue(false);
-      mockSimulateTransaction.mockResolvedValue({ result: { retval: true } });
-
-      const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
-      await expect(client.deactivateDid(keypair)).resolves.toBeUndefined();
+  it('createDid — happy path returns the new DID string', async () => {
+    // Bypass the real 2s polling delay
+    (client as any).waitForConfirmation = vi.fn().mockResolvedValue({
+      returnValue: 'did:stellar:GABC',
     });
 
-    it('throws when DID is already inactive', async () => {
-      // hasActiveDid returns false
-      mockIsSimulationError.mockReturnValue(true);
-      mockSimulateTransaction.mockResolvedValue({ error: 'No DID' });
+    const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
 
-      const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
-      await expect(client.deactivateDid(keypair)).rejects.toThrow(
-        'already inactive or does not exist'
-      );
-    });
+    const result = await client.createDid(keypair, { service: 'https://example.com' });
 
-    it('throws when transaction is rejected by the network', async () => {
-      // hasActiveDid returns true
-      mockIsSimulationError.mockReturnValue(false);
-      mockSimulateTransaction.mockResolvedValue({ result: { retval: true } });
+    expect(result).toBe('did:stellar:GABC');
+  });
 
-      // sendTransaction returns ERROR status
-      const { SorobanRpc } = await import('@stellar/stellar-sdk');
-      (SorobanRpc.Server as any).mockImplementationOnce(() => ({
-        getAccount: vi.fn().mockResolvedValue({ id: 'GABC', sequence: '0' }),
-        simulateTransaction: mockSimulateTransaction,
-        prepareTransaction: vi.fn().mockImplementation((tx) => tx),
-        sendTransaction: vi.fn().mockResolvedValue({ status: 'ERROR' }),
-        getTransaction: vi.fn(),
-      }));
+  it('createDid — throws descriptive error when DID already exists', async () => {
+    (client as any).waitForConfirmation = vi.fn().mockRejectedValue(
+      new Error('DID already exists for this address')
+    );
 
-      const freshClient = new IdentityClient(config);
-      // re-mock simulate for hasActiveDid inside freshClient
-      mockSimulateTransaction.mockResolvedValue({ result: { retval: true } });
+    const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
 
-      const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
-      await expect(freshClient.deactivateDid(keypair)).rejects.toThrow(
-        'Transaction failed'
-      );
-    });
+    await expect(client.createDid(keypair)).rejects.toThrow(
+      'A DID already exists for address GABC'
+    );
   });
 });
