@@ -54,6 +54,13 @@ stellar contract invoke \
   --network "$NETWORK" \
   -- initialize --admin "$ADMIN_ADDRESS"
 
+DEPLOYED_ENV="$(dirname "$0")/../deployed.env"
+cat > "$DEPLOYED_ENV" <<EOF
+IDENTITY_REGISTRY_ID=$REGISTRY_ID
+CREDENTIAL_MANAGER_ID=$CREDENTIAL_ID
+REPUTATION_ID=$REPUTATION_ID
+EOF
+
 echo ""
 echo "========================================"
 echo "  Deployment Summary"
@@ -63,4 +70,5 @@ echo "  credential-manager: $CREDENTIAL_ID"
 echo "  reputation:         $REPUTATION_ID"
 echo "========================================"
 echo ""
+echo "Contract IDs written to deployed.env"
 echo "Update sdk/src/index.ts with the IDs above."
