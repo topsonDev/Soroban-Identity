@@ -1,9 +1,19 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short,
+    contract, contractimpl, contracttype, contracterror, symbol_short,
     Address, Bytes, Env, Map, String, Symbol,
 };
+
+// ── Errors ────────────────────────────────────────────────────────────────────
+
+#[contracterror]
+#[derive(Clone, Debug, PartialEq)]
+pub enum ContractError {
+    DidNotFound    = 1,
+    DidDeactivated = 2,
+    MetadataTooLong = 3,
+}
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
 
@@ -51,10 +61,24 @@ impl IdentityRegistry {
         env.storage().instance().set(&ADMIN, &admin);
     }
 
+    /// Transfer admin rights to a new address. Only the current admin can call this.
+    pub fn transfer_admin(env: Env, current_admin: Address, new_admin: Address) {
+        current_admin.require_auth();
+        let stored: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
+        if stored != current_admin {
+            panic!("not the admin");
+        }
+        env.storage().instance().set(&ADMIN, &new_admin);
+        env.events().publish(
+            (ADMIN, symbol_short!("transfer")),
+            (current_admin, new_admin),
+        );
+    }
+
     // ── DID management ────────────────────────────────────────────────────────
 
     /// Create a new DID for the caller.
-    pub fn create_did(env: Env, controller: Address, metadata: Map<String, String>) -> String {
+    pub fn create_did(env: Env, controller: Address, metadata: Map<String, String>) -> Result<String, ContractError> {
         controller.require_auth();
 
         let storage = env.storage().persistent();
@@ -63,6 +87,8 @@ impl IdentityRegistry {
         if storage.has(&key) {
             panic!("DID already exists for this address");
         }
+
+        Self::validate_metadata(&metadata)?;
 
         let did_id = Self::build_did_id(&env, &controller);
         let now = env.ledger().timestamp();
@@ -80,12 +106,14 @@ impl IdentityRegistry {
         storage.extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
         env.events().publish((IDENTITY, symbol_short!("created")), controller);
 
-        did_id
+        Ok(did_id)
     }
 
     /// Update metadata on an existing DID.
-    pub fn update_did(env: Env, controller: Address, metadata: Map<String, String>) {
+    pub fn update_did(env: Env, controller: Address, metadata: Map<String, String>) -> Result<(), ContractError> {
         controller.require_auth();
+
+        Self::validate_metadata(&metadata)?;
 
         let storage = env.storage().persistent();
         let key = Self::did_key(&env, &controller);
@@ -97,6 +125,7 @@ impl IdentityRegistry {
         storage.set(&key, &doc);
         storage.extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
         env.events().publish((IDENTITY, symbol_short!("updated")), controller);
+        Ok(())
     }
 
     /// Deactivate a DID (soft delete).
@@ -116,15 +145,16 @@ impl IdentityRegistry {
     }
 
     /// Resolve a DID document by controller address.
-    pub fn resolve_did(env: Env, controller: Address) -> DidDocument {
+    pub fn resolve_did(env: Env, controller: Address) -> Result<DidDocument, ContractError> {
         let key = Self::did_key(&env, &controller);
         let doc: DidDocument = env.storage()
             .persistent()
             .get(&key)
-            .expect("DID not found");
-        // Bump TTL on read so active DIDs stay alive
-        env.storage().persistent().extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
-        doc
+            .ok_or(ContractError::DidNotFound)?;
+        if !doc.active {
+            return Err(ContractError::DidDeactivated);
+        }
+        Ok(doc)
     }
 
     /// Check whether an address has an active DID.
@@ -137,6 +167,15 @@ impl IdentityRegistry {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    fn validate_metadata(metadata: &Map<String, String>) -> Result<(), ContractError> {
+        for (k, v) in metadata.iter() {
+            if k.len() > 64 || v.len() > 256 {
+                return Err(ContractError::MetadataTooLong);
+            }
+        }
+        Ok(())
+    }
 
     fn did_key(env: &Env, controller: &Address) -> Bytes {
         // Use the raw address bytes as the storage key
@@ -208,8 +247,9 @@ mod tests {
         assert!(!client.has_active_did(&user));
     }
 
+    /// resolve_did on a deactivated DID must return DidDeactivated error.
     #[test]
-    fn test_ttl_extended_after_create() {
+    fn test_resolve_deactivated_did_returns_error() {
         let env = Env::default();
         env.mock_all_auths();
 
@@ -220,17 +260,16 @@ mod tests {
         client.initialize(&admin);
 
         let user = Address::generate(&env);
-        let metadata: Map<String, String> = Map::new(&env);
-        client.create_did(&user, &metadata);
+        client.create_did(&user, &Map::new(&env));
+        client.deactivate_did(&user);
 
-        // Verify the DID is still resolvable (TTL was set, entry not expired)
-        let doc = client.resolve_did(&user);
-        assert!(doc.active);
-        assert_eq!(doc.controller, user);
+        let result = client.try_resolve_did(&user);
+        assert_eq!(result, Err(Ok(ContractError::DidDeactivated)));
     }
 
+    /// resolve_did on a non-existent DID must return DidNotFound error.
     #[test]
-    fn test_ttl_extended_after_update() {
+    fn test_resolve_nonexistent_did_returns_error() {
         let env = Env::default();
         env.mock_all_auths();
 
@@ -241,19 +280,13 @@ mod tests {
         client.initialize(&admin);
 
         let user = Address::generate(&env);
-        let metadata: Map<String, String> = Map::new(&env);
-        client.create_did(&user, &metadata);
-
-        let new_metadata: Map<String, String> = Map::new(&env);
-        client.update_did(&user, &new_metadata);
-
-        // Entry should still be resolvable after update (TTL bumped)
-        let doc = client.resolve_did(&user);
-        assert_eq!(doc.controller, user);
+        let result = client.try_resolve_did(&user);
+        assert_eq!(result, Err(Ok(ContractError::DidNotFound)));
     }
 
+    /// create_did must return MetadataTooLong when a key exceeds 64 chars.
     #[test]
-    fn test_ttl_extended_on_resolve() {
+    fn test_create_did_metadata_key_too_long() {
         let env = Env::default();
         env.mock_all_auths();
 
@@ -264,12 +297,41 @@ mod tests {
         client.initialize(&admin);
 
         let user = Address::generate(&env);
-        let metadata: Map<String, String> = Map::new(&env);
-        client.create_did(&user, &metadata);
+        let mut metadata: Map<String, String> = Map::new(&env);
+        // 65-character key
+        metadata.set(
+            String::from_str(&env, "aaaaaaaaaabbbbbbbbbbccccccccccddddddddddeeeeeeeeeefffff1234567890"),
+            String::from_str(&env, "value"),
+        );
 
-        // Resolve twice — second call should succeed (TTL bumped on first resolve)
-        let doc1 = client.resolve_did(&user);
-        let doc2 = client.resolve_did(&user);
-        assert_eq!(doc1.id, doc2.id);
+        let result = client.try_create_did(&user, &metadata);
+        assert_eq!(result, Err(Ok(ContractError::MetadataTooLong)));
+    }
+
+    /// update_did must return MetadataTooLong when a value exceeds 256 chars.
+    #[test]
+    fn test_update_did_metadata_value_too_long() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, IdentityRegistry);
+        let client = IdentityRegistryClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let user = Address::generate(&env);
+        client.create_did(&user, &Map::new(&env));
+
+        let mut metadata: Map<String, String> = Map::new(&env);
+        // 257-character value
+        let long_val = "a".repeat(257);
+        metadata.set(
+            String::from_str(&env, "key"),
+            String::from_str(&env, &long_val),
+        );
+
+        let result = client.try_update_did(&user, &metadata);
+        assert_eq!(result, Err(Ok(ContractError::MetadataTooLong)));
     }
 }

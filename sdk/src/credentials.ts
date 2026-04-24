@@ -7,7 +7,8 @@ import {
   nativeToScVal,
   scValToNative,
 } from "@stellar/stellar-sdk";
-import type { Credential, CredentialType, SorobanIdentityConfig } from "./types";
+import type { CallOptions, Credential, CredentialType, SorobanIdentityConfig, VerifyResult } from "./types";
+import { retryWithBackoff } from "./utils";
 
 export class CredentialClient {
   private server: SorobanRpc.Server;
@@ -28,9 +29,11 @@ export class CredentialClient {
     subjectAddress: string,
     credentialType: CredentialType,
     claims: Record<string, string>,
-    expiresAt = 0
+    expiresAt = 0,
+    options?: CallOptions
   ): Promise<string> {
     const account = await this.server.getAccount(issuerKeypair.publicKey());
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     // Signature is over SHA256(issuer + subject + claims) — simplified here
     const signature = issuerKeypair.sign(
@@ -52,13 +55,13 @@ export class CredentialClient {
           nativeToScVal(expiresAt, { type: "u64" })
         )
       )
-      .setTimeout(this.config.txTimeout ?? 30)
+      .setTimeout(timeout)
       .build();
 
-    const prepared = await this.server.prepareTransaction(tx);
+    const prepared = await retryWithBackoff(() => this.server.prepareTransaction(tx));
     prepared.sign(issuerKeypair);
 
-    const result = await this.server.sendTransaction(prepared);
+    const result = await retryWithBackoff(() => this.server.sendTransaction(prepared));
     if (result.status !== "PENDING") {
       throw new Error(`Transaction failed: ${result.status}`);
     }
@@ -71,13 +74,16 @@ export class CredentialClient {
 
   /**
    * Verify a credential is valid (not revoked, not expired).
+   * Returns a typed result so callers can distinguish failure reasons.
    */
   async verifyCredential(
     callerAddress: string,
-    credentialId: string
-  ): Promise<boolean> {
+    credentialId: string,
+    options?: CallOptions
+  ): Promise<VerifyResult> {
     const account = await this.server.getAccount(callerAddress);
     const idBytes = Buffer.from(credentialId, "hex");
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -89,16 +95,82 @@ export class CredentialClient {
           nativeToScVal(idBytes, { type: "bytes" })
         )
       )
-      .setTimeout(this.config.txTimeout ?? 30)
+      .setTimeout(timeout)
       .build();
 
-    const result = await this.server.simulateTransaction(tx);
-    if (SorobanRpc.Api.isSimulationError(result)) return false;
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
 
-    return scValToNative(
+    if (SorobanRpc.Api.isSimulationError(result)) {
+      const error: string = (result as { error: string }).error ?? "";
+      if (error.includes("credential not found")) {
+        return { valid: false, reason: "not_found" };
+      }
+      return { valid: false, reason: "unknown" };
+    }
+
+    const valid = scValToNative(
       (result as SorobanRpc.Api.SimulateTransactionSuccessResponse)
         .result!.retval
     ) as boolean;
+
+    if (valid) return { valid: true };
+
+    // Contract returned false — fetch the credential to determine why
+    try {
+      const cred = await this.getCredential(callerAddress, credentialId);
+      if (cred.revoked) return { valid: false, reason: "revoked" };
+      if (cred.expiresAt > 0 && Date.now() / 1000 > cred.expiresAt) {
+        return { valid: false, reason: "expired" };
+      }
+    } catch {
+      // getCredential failed — credential likely doesn't exist
+      return { valid: false, reason: "not_found" };
+    }
+
+    return { valid: false, reason: "unknown" };
+  }
+
+  /**
+   * Get all credentials issued to a subject address.
+   */
+  async getCredentialsBySubject(
+    callerAddress: string,
+    subjectAddress: string,
+    options?: CallOptions
+  ): Promise<Credential[]> {
+    const account = await this.server.getAccount(callerAddress);
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
+
+    const idsTx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call(
+          "get_subject_credentials",
+          nativeToScVal(subjectAddress, { type: "address" })
+        )
+      )
+      .setTimeout(timeout)
+      .build();
+
+    const idsResult = await retryWithBackoff(() => this.server.simulateTransaction(idsTx));
+    if (SorobanRpc.Api.isSimulationError(idsResult)) {
+      throw new Error(`Simulation failed: ${idsResult.error}`);
+    }
+
+    const ids = scValToNative(
+      (idsResult as SorobanRpc.Api.SimulateTransactionSuccessResponse)
+        .result!.retval
+    ) as Uint8Array[];
+
+    if (!ids || ids.length === 0) return [];
+
+    return Promise.all(
+      ids.map((raw) =>
+        this.getCredential(callerAddress, Buffer.from(raw).toString("hex"), options)
+      )
+    );
   }
 
   /**
@@ -106,10 +178,12 @@ export class CredentialClient {
    */
   async getCredential(
     callerAddress: string,
-    credentialId: string
+    credentialId: string,
+    options?: CallOptions
   ): Promise<Credential> {
     const account = await this.server.getAccount(callerAddress);
     const idBytes = Buffer.from(credentialId, "hex");
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
@@ -121,10 +195,10 @@ export class CredentialClient {
           nativeToScVal(idBytes, { type: "bytes" })
         )
       )
-      .setTimeout(this.config.txTimeout ?? 30)
+      .setTimeout(timeout)
       .build();
 
-    const result = await this.server.simulateTransaction(tx);
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
     if (SorobanRpc.Api.isSimulationError(result)) {
       throw new Error(`Simulation failed: ${result.error}`);
     }

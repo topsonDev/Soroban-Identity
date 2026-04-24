@@ -49,6 +49,7 @@ const config: SorobanIdentityConfig = {
   networkPassphrase: 'Test SDF Network ; September 2015',
   identityRegistryId: 'CONTRACT_A',
   credentialManagerId: 'CONTRACT_B',
+  reputationId: 'CONTRACT_C',
 };
 
 describe('IdentityClient', () => {
@@ -108,5 +109,30 @@ describe('IdentityClient', () => {
     const result = await client.hasActiveDid('GABC');
 
     expect(result).toBe(false);
+  });
+
+  it('createDid — happy path returns the new DID string', async () => {
+    // Bypass the real 2s polling delay
+    (client as any).waitForConfirmation = vi.fn().mockResolvedValue({
+      returnValue: 'did:stellar:GABC',
+    });
+
+    const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
+
+    const result = await client.createDid(keypair, { service: 'https://example.com' });
+
+    expect(result).toBe('did:stellar:GABC');
+  });
+
+  it('createDid — throws descriptive error when DID already exists', async () => {
+    (client as any).waitForConfirmation = vi.fn().mockRejectedValue(
+      new Error('DID already exists for this address')
+    );
+
+    const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
+
+    await expect(client.createDid(keypair)).rejects.toThrow(
+      'A DID already exists for address GABC'
+    );
   });
 });

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { CredentialType } from "../../../sdk/src/types";
 import type { WalletState } from "../hooks/useWallet";
 
 interface Props {
@@ -8,7 +9,69 @@ interface Props {
   };
 }
 
-type VerifyState = "idle" | "valid" | "invalid";
+type VerifyState =
+  | "idle"
+  | "valid"
+  | "not_found"
+  | "revoked"
+  | "expired"
+  | "invalid";
+
+type FilterType = "All" | CredentialType;
+
+function formatExpiry(expiresAt: number): string {
+  if (expiresAt === 0) return "No expiry";
+
+  const now = Date.now();
+  const expiryMs = expiresAt * 1000;
+  const diffMs = expiryMs - now;
+  const diffDays = Math.floor(Math.abs(diffMs) / (1000 * 60 * 60 * 24));
+  const diffHours = Math.floor(Math.abs(diffMs) / (1000 * 60 * 60));
+  const diffMinutes = Math.floor(Math.abs(diffMs) / (1000 * 60));
+
+  if (diffMs < 0) {
+    if (diffDays > 0) return `Expired ${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
+    if (diffHours > 0) return `Expired ${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+    return `Expired ${diffMinutes} min${diffMinutes > 1 ? "s" : ""} ago`;
+  }
+
+  if (diffDays > 0) return `Expires in ${diffDays} day${diffDays > 1 ? "s" : ""}`;
+  if (diffHours > 0) return `Expires in ${diffHours} hour${diffHours > 1 ? "s" : ""}`;
+  return `Expires in ${diffMinutes} min${diffMinutes > 1 ? "s" : ""}`;
+}
+
+function getExpiryStyle(expiresAt: number): React.CSSProperties {
+  if (expiresAt === 0) return { color: "var(--text-muted)" };
+
+  const now = Date.now();
+  const expiryMs = expiresAt * 1000;
+  const diffMs = expiryMs - now;
+  const diffDays = Math.floor(Math.abs(diffMs) / (1000 * 60 * 60 * 24));
+
+  if (diffMs < 0) {
+    return { color: "var(--error)", fontWeight: 600 };
+  }
+  if (diffDays <= 7) {
+    return { color: "var(--warning)", fontWeight: 600 };
+  }
+  return { color: "var(--text-muted)" };
+}
+
+// Mock credentials for demonstration — replace with SDK data when wired
+const MOCK_CREDENTIALS = [
+  { id: "abc001", credentialType: "Kyc" as CredentialType, subject: "GABC…", expiresAt: 0 },
+  { id: "abc002", credentialType: "Kyc" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 12 * 24 * 60 * 60 * 1000) / 1000) },
+  { id: "abc003", credentialType: "Reputation" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000) },
+  { id: "abc004", credentialType: "Achievement" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() - 5 * 24 * 60 * 60 * 1000) / 1000) },
+  { id: "abc005", credentialType: "Custom" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000) },
+];
+
+const FILTER_OPTIONS: FilterType[] = ["All", "Kyc", "Reputation", "Achievement", "Custom"];
+
+function countByType(type: FilterType): number {
+  if (type === "All") return MOCK_CREDENTIALS.length;
+  return MOCK_CREDENTIALS.filter((c) => c.credentialType === type).length;
+}
 
 export default function CredentialsPanel({ wallet }: Props) {
   const [credId, setCredId] = useState("");
@@ -19,6 +82,13 @@ export default function CredentialsPanel({ wallet }: Props) {
   const [issueResult, setIssueResult] = useState<string | null>(null);
   const [issuing, setIssuing] = useState(false);
 
+  const [activeFilter, setActiveFilter] = useState<FilterType>("All");
+
+  const filteredCredentials =
+    activeFilter === "All"
+      ? MOCK_CREDENTIALS
+      : MOCK_CREDENTIALS.filter((c) => c.credentialType === activeFilter);
+
   const handleVerify = async () => {
     if (!credId.trim()) return;
     setVerifying(true);
@@ -26,7 +96,14 @@ export default function CredentialsPanel({ wallet }: Props) {
     try {
       // TODO: wire CredentialClient.verifyCredential() from SDK
       await new Promise((r) => setTimeout(r, 800));
-      setVerifyState(credId.startsWith("0") ? "invalid" : "valid");
+      const mockResult = credId.startsWith("0")
+        ? { valid: false as const, reason: "revoked" as const }
+        : { valid: true as const };
+      if (mockResult.valid) {
+        setVerifyState("valid");
+      } else {
+        setVerifyState(mockResult.reason);
+      }
     } catch {
       setVerifyState("invalid");
     } finally {
@@ -54,6 +131,77 @@ export default function CredentialsPanel({ wallet }: Props) {
 
   return (
     <>
+      {/* Filter bar */}
+      <div className="card">
+        <h2>Credentials</h2>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+          {FILTER_OPTIONS.map((type) => {
+            const count = countByType(type);
+            const isActive = activeFilter === type;
+            return (
+              <button
+                key={type}
+                onClick={() => setActiveFilter(type)}
+                style={{
+                  padding: "0.3rem 0.75rem",
+                  borderRadius: "999px",
+                  border: isActive ? "2px solid var(--accent-light)" : "2px solid var(--border-input)",
+                  background: isActive ? "var(--card-bg-accent)" : "transparent",
+                  color: isActive ? "var(--accent-light)" : "var(--text-muted)",
+                  cursor: "pointer",
+                  fontSize: "0.85rem",
+                  fontWeight: isActive ? 600 : 400,
+                }}
+                aria-pressed={isActive}
+              >
+                {type}{" "}
+                <span
+                  style={{
+                    background: isActive ? "var(--filter-badge-active-bg)" : "var(--border-input)",
+                    color: isActive ? "var(--filter-badge-active-text)" : "var(--text-muted)",
+                    borderRadius: "999px",
+                    padding: "0 0.4rem",
+                    fontSize: "0.75rem",
+                    marginLeft: "0.25rem",
+                  }}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {filteredCredentials.length === 0 ? (
+          <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
+            No {activeFilter} credentials found.
+          </p>
+        ) : (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {filteredCredentials.map((cred) => (
+              <li
+                key={cred.id}
+                style={{
+                  background: "var(--cred-item-bg)",
+                  borderRadius: "0.5rem",
+                  padding: "0.6rem 1rem",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  fontSize: "0.85rem",
+                  color: "var(--text)",
+                  gap: "1rem",
+                }}
+              >
+                <span style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{cred.id}</span>
+                <span className="badge badge-green">{cred.credentialType}</span>
+                <span style={getExpiryStyle(cred.expiresAt)}>{formatExpiry(cred.expiresAt)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <div className="card">
         <h2>Verify Credential</h2>
         <input
@@ -66,13 +214,21 @@ export default function CredentialsPanel({ wallet }: Props) {
         </button>
         {verifyState !== "idle" && (
           <div style={{ marginTop: "1rem" }}>
-            <span
-              className={`badge ${
-                verifyState === "valid" ? "badge-green" : "badge-red"
-              }`}
-            >
-              {verifyState === "valid" ? "Valid" : "Invalid / Revoked"}
-            </span>
+            {verifyState === "valid" && (
+              <span className="badge badge-green">Valid</span>
+            )}
+            {verifyState === "revoked" && (
+              <span className="badge badge-red">Invalid — credential has been revoked</span>
+            )}
+            {verifyState === "expired" && (
+              <span className="badge badge-red">Invalid — credential has expired</span>
+            )}
+            {verifyState === "not_found" && (
+              <span className="badge badge-red">Invalid — credential not found</span>
+            )}
+            {(verifyState === "invalid" || verifyState === "unknown" as string) && (
+              <span className="badge badge-red">Invalid</span>
+            )}
           </div>
         )}
       </div>
@@ -81,9 +237,9 @@ export default function CredentialsPanel({ wallet }: Props) {
         <h2>Issue Credential</h2>
         {wallet.connected ? (
           <>
-            <p style={{ color: "#94a3b8", fontSize: "0.85rem", marginBottom: "1rem" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
               Issuing as{" "}
-              <span style={{ color: "#a78bfa" }}>
+              <span style={{ color: "var(--accent-light)" }}>
                 {wallet.publicKey?.slice(0, 6)}…{wallet.publicKey?.slice(-4)}
               </span>
             </p>
@@ -97,7 +253,7 @@ export default function CredentialsPanel({ wallet }: Props) {
             </button>
           </>
         ) : (
-          <p style={{ color: "#94a3b8", fontSize: "0.85rem" }}>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
             Connect your Freighter wallet to issue credentials as a registered issuer.
           </p>
         )}
