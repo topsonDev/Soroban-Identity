@@ -23,6 +23,7 @@ export interface WalletState {
   networkPassphrase: string | null;
   connected: boolean;
   connecting: boolean;
+  txLoading: boolean;
   walletType: WalletType | null;
   error: string | null;
 }
@@ -43,6 +44,7 @@ export function useWallet() {
     networkPassphrase: null,
     connected: false,
     connecting: false,
+    txLoading: false,
     walletType: null,
     error: null,
   });
@@ -213,28 +215,33 @@ export function useWallet() {
     async (xdr: string): Promise<string> => {
       if (!state.connected) throw new Error("Wallet not connected");
 
-      if (state.walletType === "walletconnect") {
-        if (!wcClientRef.current || !wcTopicRef.current) {
-          throw new Error("WalletConnect session not available");
+      setState((s) => ({ ...s, txLoading: true }));
+      try {
+        if (state.walletType === "walletconnect") {
+          if (!wcClientRef.current || !wcTopicRef.current) {
+            throw new Error("WalletConnect session not available");
+          }
+          const result = await wcClientRef.current.request<{ signedXDR: string }>({
+            topic: wcTopicRef.current,
+            chainId: STELLAR_CHAIN,
+            request: {
+              method: "stellar_signXDR",
+              params: { xdr },
+            },
+          });
+          return result.signedXDR;
         }
-        const result = await wcClientRef.current.request<{ signedXDR: string }>({
-          topic: wcTopicRef.current,
-          chainId: STELLAR_CHAIN,
-          request: {
-            method: "stellar_signXDR",
-            params: { xdr },
-          },
-        });
-        return result.signedXDR;
-      }
 
-      // Freighter
-      if (!window.freighter || !state.networkPassphrase) {
-        throw new Error("Freighter not available");
+        // Freighter
+        if (!window.freighter || !state.networkPassphrase) {
+          throw new Error("Freighter not available");
+        }
+        return await window.freighter.signTransaction(xdr, {
+          networkPassphrase: state.networkPassphrase,
+        });
+      } finally {
+        setState((s) => ({ ...s, txLoading: false }));
       }
-      return window.freighter.signTransaction(xdr, {
-        networkPassphrase: state.networkPassphrase,
-      });
     },
     [state.connected, state.walletType, state.networkPassphrase]
   );
