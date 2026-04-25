@@ -23,6 +23,7 @@ const DEF_THRESH: Symbol = symbol_short!("DEFTHRESH");
 #[derive(Clone, Debug, PartialEq)]
 pub enum ContractError {
     AlreadyInitialized = 1,
+    ReasonTooLong = 2,
 }
 
 // ── Data types ────────────────────────────────────────────────────────────────
@@ -146,9 +147,14 @@ impl Reputation {
         subject: Address,
         delta: i64,
         reason: soroban_sdk::String,
-    ) {
+    ) -> Result<(), ContractError> {
         reporter.require_auth();
         Self::require_reporter(&env, &reporter);
+
+        // Validate reason string length
+        if reason.len() > 256 {
+            return Err(ContractError::ReasonTooLong);
+        }
 
         let now = env.ledger().timestamp();
 
@@ -194,6 +200,8 @@ impl Reputation {
 
         env.events()
             .publish((symbol_short!("SCORE"), symbol_short!("updated")), (reporter, subject, delta));
+        
+        Ok(())
     }
 
     /// Get the reputation record for a subject.
@@ -554,4 +562,45 @@ mod tests {
         // attacker is not the admin — must panic
         client.transfer_admin(&attacker, &new_admin);
     }
-}
+
+    #[test]
+    fn test_submit_score_reason_too_long() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin    = Address::generate(&env);
+        let reporter = Address::generate(&env);
+        let subject  = Address::generate(&env);
+
+        client.initialize(&admin);
+        client.add_reporter(&reporter);
+
+        // Create a reason string longer than 256 characters
+        let long_reason = String::from_str(&env, &"x".repeat(257));
+        let result = client.try_submit_score(&reporter, &subject, &10, &long_reason);
+        assert_eq!(result, Err(Ok(ContractError::ReasonTooLong)));
+    }
+
+    #[test]
+    fn test_submit_score_reason_at_limit() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin    = Address::generate(&env);
+        let reporter = Address::generate(&env);
+        let subject  = Address::generate(&env);
+
+        client.initialize(&admin);
+        client.add_reporter(&reporter);
+
+        // Create a reason string exactly 256 characters
+        let reason_at_limit = String::from_str(&env, &"x".repeat(256));
+        let result = client.try_submit_score(&reporter, &subject, &10, &reason_at_limit);
+        assert!(result.is_ok());
+    }
