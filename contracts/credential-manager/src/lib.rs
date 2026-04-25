@@ -99,6 +99,16 @@ impl CredentialManager {
         );
     }
 
+    /// Upgrade the contract WASM. Only the admin can call this.
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: Bytes) {
+        admin.require_auth();
+        let stored: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
+        if stored != admin {
+            panic!("not the admin");
+        }
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
     /// Register a trusted issuer (admin only).
     pub fn add_issuer(env: Env, issuer: Address) {
         Self::require_admin(&env);

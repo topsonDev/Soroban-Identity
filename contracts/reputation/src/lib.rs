@@ -89,6 +89,16 @@ impl Reputation {
         );
     }
 
+    /// Upgrade the contract WASM. Only the admin can call this.
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: Vec<u8>) {
+        admin.require_auth();
+        let stored: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
+        if stored != admin {
+            panic!("not the admin");
+        }
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
     pub fn add_reporter(env: Env, reporter: Address) {
         Self::require_admin(&env);
         let mut reporters = Self::get_reporters(&env);
