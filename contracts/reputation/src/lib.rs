@@ -23,6 +23,7 @@ const DEF_THRESH: Symbol = symbol_short!("DEFTHRESH");
 #[derive(Clone, Debug, PartialEq)]
 pub enum ContractError {
     AlreadyInitialized = 1,
+    ReporterNotFound = 2,
 }
 
 // ── Data types ────────────────────────────────────────────────────────────────
@@ -86,6 +87,16 @@ impl Reputation {
             (ADMIN, symbol_short!("transfer")),
             (current_admin, new_admin),
         );
+    }
+
+    /// Upgrade the contract WASM. Only the admin can call this.
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: Vec<u8>) {
+        admin.require_auth();
+        let stored: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
+        if stored != admin {
+            panic!("not the admin");
+        }
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
     pub fn add_reporter(env: Env, reporter: Address) {
@@ -220,7 +231,11 @@ impl Reputation {
         reporter: Address,
         offset: u32,
         limit: u32,
-    ) -> Vec<ScoreEntry> {
+    ) -> Result<Vec<ScoreEntry>, ContractError> {
+        if !Self::get_reporters(&env).contains(&reporter) {
+            return Err(ContractError::ReporterNotFound);
+        }
+
         let key = Self::history_key(&subject, &reporter);
         let all: Vec<ScoreEntry> = env
             .storage()
@@ -238,7 +253,7 @@ impl Reputation {
         for i in start..end {
             page.push_back(all.get(i).unwrap());
         }
-        page
+        Ok(page)
     }
 
     /// Simple anti-sybil check: returns true if score >= threshold AND
@@ -353,23 +368,23 @@ mod tests {
         }
 
         // First page: offset=0, limit=2 → entries 0,1
-        let page1 = client.get_history(&subject, &reporter, &0, &2);
+        let page1 = client.get_history(&subject, &reporter, &0, &2).unwrap();
         assert_eq!(page1.len(), 2);
         assert_eq!(page1.get(0).unwrap().delta, 0);
         assert_eq!(page1.get(1).unwrap().delta, 1);
 
         // Second page: offset=2, limit=2 → entries 2,3
-        let page2 = client.get_history(&subject, &reporter, &2, &2);
+        let page2 = client.get_history(&subject, &reporter, &2, &2).unwrap();
         assert_eq!(page2.len(), 2);
         assert_eq!(page2.get(0).unwrap().delta, 2);
 
         // Last page: offset=4, limit=10 → only entry 4 remains
-        let page3 = client.get_history(&subject, &reporter, &4, &10);
+        let page3 = client.get_history(&subject, &reporter, &4, &10).unwrap();
         assert_eq!(page3.len(), 1);
         assert_eq!(page3.get(0).unwrap().delta, 4);
 
         // Offset beyond length → empty
-        let empty = client.get_history(&subject, &reporter, &99, &10);
+        let empty = client.get_history(&subject, &reporter, &99, &10).unwrap();
         assert_eq!(empty.len(), 0);
     }
 
@@ -509,12 +524,12 @@ mod tests {
         client.submit_score(&reporter1, &subject, &20, &r1);
         client.submit_score(&reporter2, &subject, &99, &r2);
 
-        let h1 = client.get_history(&subject, &reporter1, &0, &10);
+        let h1 = client.get_history(&subject, &reporter1, &0, &10).unwrap();
         assert_eq!(h1.len(), 2);
         assert_eq!(h1.get(0).unwrap().delta, 10);
         assert_eq!(h1.get(1).unwrap().delta, 20);
 
-        let h2 = client.get_history(&subject, &reporter2, &0, &10);
+        let h2 = client.get_history(&subject, &reporter2, &0, &10).unwrap();
         assert_eq!(h2.len(), 1);
         assert_eq!(h2.get(0).unwrap().delta, 99);
     }
@@ -538,7 +553,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_transfer_admin_unauthorized() {
         let env = Env::default();
         env.mock_all_auths();
@@ -553,5 +567,34 @@ mod tests {
         client.initialize(&admin);
         // attacker is not the admin — must panic
         client.transfer_admin(&attacker, &new_admin);
+    }
+
+    /// get_history returns ReporterNotFound error for unregistered reporter.
+    #[test]
+    fn test_get_history_unknown_reporter() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin    = Address::generate(&env);
+        let reporter = Address::generate(&env);
+        let unknown  = Address::generate(&env);
+        let subject  = Address::generate(&env);
+
+        client.initialize(&admin);
+        client.add_reporter(&reporter);
+
+        let reason = String::from_str(&env, "test");
+        client.submit_score(&reporter, &subject, &10, &reason);
+
+        // Registered reporter should work
+        let result = client.get_history(&subject, &reporter, &0, &10);
+        assert!(result.is_ok());
+
+        // Unknown reporter should return error
+        let result = client.try_get_history(&subject, &unknown, &0, &10);
+        assert_eq!(result, Err(Ok(ContractError::ReporterNotFound)));
     }
 }
