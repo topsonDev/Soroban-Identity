@@ -40,6 +40,7 @@ export default function IdentityPanel({ wallet }: Props) {
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
   const [showQr, setShowQr] = useState(false);
   const [resolvedDoc, setResolvedDoc] = useState<object | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const handleResolve = async () => {
     if (!resolveAddress.trim()) return;
@@ -108,6 +109,33 @@ export default function IdentityPanel({ wallet }: Props) {
     a.download = 'did-document.json';
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleCopyDid = async () => {
+    if (!resolvedAddress) return;
+    const did = `did:stellar:${resolvedAddress}`;
+    
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(did);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } else {
+        // Fallback for browsers without clipboard API
+        const textarea = document.createElement('textarea');
+        textarea.value = did;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (err) {
+      console.error('Failed to copy DID:', err);
+    }
   };
 
   const handleCreate = async () => {
@@ -189,7 +217,39 @@ export default function IdentityPanel({ wallet }: Props) {
           {resolving ? 'Resolving…' : 'Resolve'}
         </button>
         {resolving && <SkeletonCard rows={4} />}
-        {!resolving && resolveResult && <pre className="result">{resolveResult}</pre>}
+        {!resolving && resolveResult && (
+          <>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem', 
+              marginTop: '0.75rem',
+              padding: '0.75rem',
+              background: 'var(--card-bg-accent)',
+              borderRadius: '0.5rem',
+              border: '1px solid var(--card-border-accent)'
+            }}>
+              <div style={{ flex: 1, wordBreak: 'break-all', fontSize: '0.9rem', color: 'var(--accent-light)' }}>
+                <strong>DID:</strong> did:stellar:{resolvedAddress}
+              </div>
+              <button
+                onClick={handleCopyDid}
+                style={{
+                  padding: '0.4rem 0.8rem',
+                  fontSize: '0.85rem',
+                  minWidth: '80px',
+                  background: copied ? 'var(--sybil-pass-bg)' : 'var(--button-bg)',
+                  color: copied ? 'var(--sybil-pass-text)' : 'var(--button-text)',
+                  border: copied ? '1px solid var(--sybil-pass-border)' : '1px solid var(--button-border)',
+                }}
+                title="Copy DID to clipboard"
+              >
+                {copied ? '✓ Copied!' : '📋 Copy'}
+              </button>
+            </div>
+            <pre className="result">{resolveResult}</pre>
+          </>
+        )}
 
         {resolvedAddress && (
           <div style={{ marginTop: '0.75rem' }}>
