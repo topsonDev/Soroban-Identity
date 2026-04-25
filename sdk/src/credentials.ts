@@ -244,4 +244,33 @@ export class CredentialClient {
       credentialIds.map((id) => this.verifyCredential(callerAddress, id, options))
     );
   }
+
+  /**
+   * Get the list of all registered issuers. No auth required — read-only.
+   */
+  async getIssuers(callerAddress: string, options?: CallOptions): Promise<string[]> {
+    validateStellarAddress(callerAddress);
+    const account = await this.server.getAccount(callerAddress);
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(this.contract.call("get_issuers"))
+      .setTimeout(timeout)
+      .build();
+
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
+    if (SorobanRpc.Api.isSimulationError(result)) {
+      throw new Error(`Simulation failed: ${result.error}`);
+    }
+
+    const issuers = scValToNative(
+      (result as SorobanRpc.Api.SimulateTransactionSuccessResponse)
+        .result!.retval
+    ) as string[];
+
+    return issuers;
+  }
 }

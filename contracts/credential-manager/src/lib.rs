@@ -102,7 +102,7 @@ impl CredentialManager {
     /// Register a trusted issuer (admin only).
     pub fn add_issuer(env: Env, issuer: Address) {
         Self::require_admin(&env);
-        let mut issuers = Self::get_issuers(&env);
+        let mut issuers = Self::get_issuers_internal(&env);
         if !issuers.contains(&issuer) {
             if issuers.len() >= MAX_ISSUERS {
                 panic!("MaxIssuersReached");
@@ -116,7 +116,7 @@ impl CredentialManager {
     /// Remove a trusted issuer (admin only).
     pub fn remove_issuer(env: Env, issuer: Address) {
         Self::require_admin(&env);
-        let issuers = Self::get_issuers(&env);
+        let issuers = Self::get_issuers_internal(&env);
         let mut updated = Vec::new(&env);
         for i in issuers.iter() {
             if i != issuer {
@@ -251,6 +251,11 @@ impl CredentialManager {
         Self::fetch_subject_creds(&env, &subject)
     }
 
+    /// Get the list of all registered issuers. No auth required — read-only.
+    pub fn get_issuers(env: Env) -> Vec<Address> {
+        Self::get_issuers_internal(&env)
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     fn require_admin(env: &Env) {
@@ -259,13 +264,13 @@ impl CredentialManager {
     }
 
     fn require_issuer(env: &Env, issuer: &Address) {
-        let issuers = Self::get_issuers(env);
+        let issuers = Self::get_issuers_internal(env);
         if !issuers.contains(issuer) {
             panic!("not a registered issuer");
         }
     }
 
-    fn get_issuers(env: &Env) -> Vec<Address> {
+    fn get_issuers_internal(env: &Env) -> Vec<Address> {
         env.storage()
             .instance()
             .get(&ISSUER)
@@ -528,4 +533,45 @@ mod tests {
         // The 101st add must panic
         client.add_issuer(&Address::generate(&env));
     }
-}
+
+    /// get_issuers returns the list of all registered issuers.
+    #[test]
+    fn test_get_issuers() {
+        let (env, _admin, client) = setup();
+
+        let issuer1 = Address::generate(&env);
+        let issuer2 = Address::generate(&env);
+        let issuer3 = Address::generate(&env);
+
+        client.add_issuer(&issuer1);
+        client.add_issuer(&issuer2);
+        client.add_issuer(&issuer3);
+
+        let issuers = client.get_issuers();
+        assert_eq!(issuers.len(), 3);
+        assert!(issuers.contains(&issuer1));
+        assert!(issuers.contains(&issuer2));
+        assert!(issuers.contains(&issuer3));
+    }
+
+    /// get_issuers reflects add and remove operations.
+    #[test]
+    fn test_get_issuers_after_remove() {
+        let (env, _admin, client) = setup();
+
+        let issuer1 = Address::generate(&env);
+        let issuer2 = Address::generate(&env);
+
+        client.add_issuer(&issuer1);
+        client.add_issuer(&issuer2);
+
+        let issuers_before = client.get_issuers();
+        assert_eq!(issuers_before.len(), 2);
+
+        client.remove_issuer(&issuer1);
+
+        let issuers_after = client.get_issuers();
+        assert_eq!(issuers_after.len(), 1);
+        assert!(!issuers_after.contains(&issuer1));
+        assert!(issuers_after.contains(&issuer2));
+    }
