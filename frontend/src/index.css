@@ -298,3 +298,101 @@ button:disabled { background: var(--btn-disabled-bg); color: var(--btn-disabled-
   transition: background 0.2s, color 0.2s;
 }
 .theme-toggle:hover { background: var(--bg-subtle); color: var(--text); }
+
+/* ── Mobile responsive layout ─────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .container { padding: 1rem 0.75rem; }
+
+  header {
+    padding: 1.5rem 0.75rem 1rem;
+    margin-bottom: 1rem;
+  }
+
+  header h1 { font-size: 1.5rem; }
+  header p  { font-size: 0.85rem; }
+
+  header > div {
+    position: static !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+    align-items: stretch !important;
+    margin-top: 1rem;
+  }
+
+  header > div > button {
+    width: 100%;
+  }
+
+  .card {
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .card h2 { font-size: 1rem; }
+
+  input, textarea {
+    font-size: 16px;
+  }
+
+  button {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+  }
+
+  .tabs {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .tab {
+    flex: 1;
+    min-width: 120px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+  }
+
+  .badge {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+  }
+
+  .result {
+    font-size: 0.75rem;
+    padding: 0.5rem;
+  }
+}
+
+@media (max-width: 414px) {
+  .container { padding: 0.75rem 0.5rem; }
+
+  header {
+    padding: 1rem 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  header h1 { font-size: 1.25rem; }
+  header p  { font-size: 0.8rem; }
+
+  .card {
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  button {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+  }
+
+  .tab {
+    min-width: 100px;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.8rem;
+  }
+
+  input, textarea {
+    padding: 0.5rem 0.6rem;
+    font-size: 16px;
+  }
+}
