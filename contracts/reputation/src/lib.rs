@@ -157,9 +157,14 @@ impl Reputation {
         subject: Address,
         delta: i64,
         reason: soroban_sdk::String,
-    ) {
+    ) -> Result<(), ContractError> {
         reporter.require_auth();
         Self::require_reporter(&env, &reporter);
+
+        // Validate reason string length
+        if reason.len() > 256 {
+            return Err(ContractError::ReasonTooLong);
+        }
 
         let now = env.ledger().timestamp();
 
@@ -205,6 +210,8 @@ impl Reputation {
 
         env.events()
             .publish((symbol_short!("SCORE"), symbol_short!("updated")), (reporter, subject, delta));
+        
+        Ok(())
     }
 
     /// Get the reputation record for a subject.
