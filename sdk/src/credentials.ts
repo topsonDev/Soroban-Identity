@@ -8,7 +8,7 @@ import {
   scValToNative,
 } from "@stellar/stellar-sdk";
 import type { CallOptions, Credential, CredentialType, SorobanIdentityConfig, VerifyResult, WriteResult } from "./types";
-import { retryWithBackoff, validateStellarAddress } from "./utils";
+import { retryWithBackoff, validateStellarAddress, pollTransactionStatus } from "./utils";
 
 export class CredentialClient {
   private server: SorobanRpc.Server;
@@ -81,7 +81,8 @@ export class CredentialClient {
       throw new Error(`Transaction failed: ${result.status}`);
     }
 
-    const confirmed = await this.waitForConfirmation(result.hash);
+    await pollTransactionStatus(this.server, result.hash);
+    const confirmed = await this.server.getTransaction(result.hash) as SorobanRpc.Api.GetSuccessfulTransactionResponse;
     // Returns BytesN<32> — encode as hex
     const raw = scValToNative(confirmed.returnValue!) as Uint8Array;
     const credentialId = Buffer.from(raw).toString("hex");
@@ -242,22 +243,5 @@ export class CredentialClient {
     return Promise.all(
       credentialIds.map((id) => this.verifyCredential(callerAddress, id, options))
     );
-  }
-
-  private async waitForConfirmation(
-    hash: string,
-    retries = 10
-  ): Promise<SorobanRpc.Api.GetSuccessfulTransactionResponse> {
-    for (let i = 0; i < retries; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
-      const status = await this.server.getTransaction(hash);
-      if (status.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
-        return status as SorobanRpc.Api.GetSuccessfulTransactionResponse;
-      }
-      if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-        throw new Error("Transaction failed on-chain");
-      }
-    }
-    throw new Error("Transaction confirmation timeout");
   }
 }

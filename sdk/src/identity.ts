@@ -8,7 +8,7 @@ import {
   scValToNative,
 } from "@stellar/stellar-sdk";
 import type { CallOptions, DidDocument, SorobanIdentityConfig, WriteResult } from "./types";
-import { retryWithBackoff, validateStellarAddress } from "./utils";
+import { retryWithBackoff, validateStellarAddress, pollTransactionStatus } from "./utils";
 
 export class IdentityClient {
   private server: SorobanRpc.Server;
@@ -59,9 +59,11 @@ export class IdentityClient {
       throw new Error(`Transaction failed: ${result.status}`);
     }
 
-    let confirmed: SorobanRpc.Api.GetSuccessfulTransactionResponse;
     try {
-      confirmed = await this.waitForConfirmation(result.hash);
+      await pollTransactionStatus(this.server, result.hash);
+      const confirmed = await this.server.getTransaction(result.hash) as SorobanRpc.Api.GetSuccessfulTransactionResponse;
+      const did = scValToNative(confirmed.returnValue!) as string;
+      return { did, estimatedFee, estimatedFeeXlm };
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes("DID already exists")) {
@@ -71,8 +73,6 @@ export class IdentityClient {
       }
       throw e;
     }
-    const did = scValToNative(confirmed.returnValue!) as string;
-    return { did, estimatedFee, estimatedFeeXlm };
   }
 
   /**
@@ -109,7 +109,7 @@ export class IdentityClient {
     }
 
     try {
-      await this.waitForConfirmation(result.hash);
+      await pollTransactionStatus(this.server, result.hash);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes("DID not found")) {
@@ -230,23 +230,6 @@ export class IdentityClient {
       throw new Error(`Transaction failed: ${result.status}`);
     }
 
-    await this.waitForConfirmation(result.hash);
-  }
-
-  private async waitForConfirmation(
-    hash: string,
-    retries = 10
-  ): Promise<SorobanRpc.Api.GetSuccessfulTransactionResponse> {
-    for (let i = 0; i < retries; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
-      const status = await this.server.getTransaction(hash);
-      if (status.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
-        return status as SorobanRpc.Api.GetSuccessfulTransactionResponse;
-      }
-      if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-        throw new Error("Transaction failed on-chain");
-      }
-    }
-    throw new Error("Transaction confirmation timeout");
+    await pollTransactionStatus(this.server, result.hash);
   }
 }

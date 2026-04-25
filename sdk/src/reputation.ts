@@ -8,7 +8,7 @@ import {
   scValToNative,
 } from "@stellar/stellar-sdk";
 import type { CallOptions, SorobanIdentityConfig, WriteResult } from "./types";
-import { retryWithBackoff, validateStellarAddress } from "./utils";
+import { retryWithBackoff, validateStellarAddress, pollTransactionStatus } from "./utils";
 
 export interface ReputationRecord {
   subject: string;
@@ -218,6 +218,8 @@ export class ReputationClient {
     if (result.status !== "PENDING") {
       throw new Error(`Transaction failed: ${result.status}`);
     }
+    
+    await pollTransactionStatus(this.server, result.hash);
     return { estimatedFee, estimatedFeeXlm };
   }
 }
