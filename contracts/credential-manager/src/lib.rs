@@ -19,7 +19,7 @@ const MAX_ISSUERS: u32 = 100;
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 #[contracterror]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Copy)]
 pub enum ContractError {
     AlreadyInitialized       = 1,
     UnauthorizedIssuer       = 2,
@@ -249,6 +249,11 @@ impl CredentialManager {
     /// List all credential IDs for a subject.
     pub fn get_subject_credentials(env: Env, subject: Address) -> Vec<BytesN<32>> {
         Self::fetch_subject_creds(&env, &subject)
+    }
+
+    /// Check if an address is a registered issuer.
+    pub fn is_issuer(env: Env, address: Address) -> bool {
+        Self::get_issuers(&env).contains(&address)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -527,5 +532,36 @@ mod tests {
 
         // The 101st add must panic
         client.add_issuer(&Address::generate(&env));
+    }
+
+    #[test]
+    fn test_is_issuer() {
+        let (env, _admin, client) = setup();
+
+        let issuer1 = Address::generate(&env);
+        let issuer2 = Address::generate(&env);
+        let non_issuer = Address::generate(&env);
+
+        // Initially, no one is an issuer
+        assert!(!client.is_issuer(&issuer1));
+        assert!(!client.is_issuer(&non_issuer));
+
+        // Add issuer1
+        client.add_issuer(&issuer1);
+        assert!(client.is_issuer(&issuer1));
+        assert!(!client.is_issuer(&issuer2));
+        assert!(!client.is_issuer(&non_issuer));
+
+        // Add issuer2
+        client.add_issuer(&issuer2);
+        assert!(client.is_issuer(&issuer1));
+        assert!(client.is_issuer(&issuer2));
+        assert!(!client.is_issuer(&non_issuer));
+
+        // Remove issuer1
+        client.remove_issuer(&issuer1);
+        assert!(!client.is_issuer(&issuer1));
+        assert!(client.is_issuer(&issuer2));
+        assert!(!client.is_issuer(&non_issuer));
     }
 }

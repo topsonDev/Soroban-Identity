@@ -270,4 +270,45 @@ describe("CredentialClient", () => {
   it("getCredentialsBySubject — throws InvalidAddress for invalid subject address", async () => {
     await expect(client.getCredentialsBySubject("GABC", "bad-address")).rejects.toThrow("InvalidAddress");
   });
+
+  it("isIssuer — returns true when address is a registered issuer", async () => {
+    const server = (client as any).server;
+    server.simulateTransaction.mockResolvedValueOnce({
+      result: { retval: true },
+    });
+
+    const result = await client.isIssuer("GABC", "GISSUER");
+
+    expect(result).toBe(true);
+  });
+
+  it("isIssuer — returns false when address is not a registered issuer", async () => {
+    const server = (client as any).server;
+    server.simulateTransaction.mockResolvedValueOnce({
+      result: { retval: false },
+    });
+
+    const result = await client.isIssuer("GABC", "GNOT_ISSUER");
+
+    expect(result).toBe(false);
+  });
+
+  it("isIssuer — throws InvalidAddress for invalid caller address", async () => {
+    await expect(client.isIssuer("bad-address", "GISSUER")).rejects.toThrow("InvalidAddress");
+  });
+
+  it("isIssuer — throws InvalidAddress for invalid target address", async () => {
+    await expect(client.isIssuer("GABC", "bad-address")).rejects.toThrow("InvalidAddress");
+  });
+
+  it("isIssuer — throws on simulation error", async () => {
+    const { SorobanRpc } = await import("@stellar/stellar-sdk");
+    vi.mocked(SorobanRpc.Api.isSimulationError).mockReturnValueOnce(true);
+    const server = (client as any).server;
+    server.simulateTransaction.mockResolvedValueOnce({
+      error: "contract trap",
+    });
+
+    await expect(client.isIssuer("GABC", "GISSUER")).rejects.toThrow("Simulation failed: contract trap");
+  });
 });

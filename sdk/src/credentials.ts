@@ -230,6 +230,43 @@ export class CredentialClient {
   }
 
   /**
+   * Check if an address is a registered issuer.
+   */
+  async isIssuer(
+    callerAddress: string,
+    targetAddress: string,
+    options?: CallOptions
+  ): Promise<boolean> {
+    validateStellarAddress(callerAddress);
+    validateStellarAddress(targetAddress);
+    const account = await this.server.getAccount(callerAddress);
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call(
+          "is_issuer",
+          nativeToScVal(targetAddress, { type: "address" })
+        )
+      )
+      .setTimeout(timeout)
+      .build();
+
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
+    if (SorobanRpc.Api.isSimulationError(result)) {
+      throw new Error(`Simulation failed: ${result.error}`);
+    }
+
+    return scValToNative(
+      (result as SorobanRpc.Api.SimulateTransactionSuccessResponse)
+        .result!.retval
+    ) as boolean;
+  }
+
+  /**
    * Verify multiple credentials in parallel.
    * Returns an array of VerifyResult in the same order as the input credentialIds.
    */
