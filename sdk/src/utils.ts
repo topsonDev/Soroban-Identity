@@ -1,4 +1,4 @@
-import { StrKey } from "@stellar/stellar-sdk";
+import { StrKey, SorobanRpc } from "@stellar/stellar-sdk";
 
 /**
  * Retries an async function with exponential backoff on transient network errors.
@@ -24,6 +24,35 @@ export async function retryWithBackoff<T>(
     }
   }
   throw lastError;
+}
+
+/**
+ * Polls for the final transaction status (SUCCESS or FAILED).
+ * Throws an error if the transaction fails or times out.
+ *
+ * @param server      - SorobanRpc.Server instance
+ * @param hash        - Transaction hash
+ * @param maxAttempts - Maximum polling attempts (default: 10)
+ * @param intervalMs  - Polling interval in ms (default: 2000)
+ */
+export async function pollTransactionStatus(
+  server: SorobanRpc.Server,
+  hash: string,
+  maxAttempts = 10,
+  intervalMs = 2000
+): Promise<void> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    await delay(intervalMs);
+    const status = await server.getTransaction(hash);
+    
+    if (status.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
+      return;
+    }
+    if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
+      throw new Error(`Transaction failed on-chain: ${(status as any).resultXdr || 'unknown error'}`);
+    }
+  }
+  throw new Error("Transaction confirmation timeout");
 }
 
 function isTransientError(err: unknown): boolean {

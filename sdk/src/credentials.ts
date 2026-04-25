@@ -8,7 +8,7 @@ import {
   scValToNative,
 } from "@stellar/stellar-sdk";
 import type { CallOptions, Credential, CredentialType, SorobanIdentityConfig, VerifyResult, WriteResult } from "./types";
-import { retryWithBackoff, validateStellarAddress } from "./utils";
+import { retryWithBackoff, validateStellarAddress, pollTransactionStatus } from "./utils";
 
 export class CredentialClient {
   private server: SorobanRpc.Server;
@@ -81,7 +81,8 @@ export class CredentialClient {
       throw new Error(`Transaction failed: ${result.status}`);
     }
 
-    const confirmed = await this.waitForConfirmation(result.hash);
+    await pollTransactionStatus(this.server, result.hash);
+    const confirmed = await this.server.getTransaction(result.hash) as SorobanRpc.Api.GetSuccessfulTransactionResponse;
     // Returns BytesN<32> — encode as hex
     const raw = scValToNative(confirmed.returnValue!) as Uint8Array;
     const credentialId = Buffer.from(raw).toString("hex");
@@ -281,20 +282,32 @@ export class CredentialClient {
     );
   }
 
-  private async waitForConfirmation(
-    hash: string,
-    retries = 10
-  ): Promise<SorobanRpc.Api.GetSuccessfulTransactionResponse> {
-    for (let i = 0; i < retries; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
-      const status = await this.server.getTransaction(hash);
-      if (status.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
-        return status as SorobanRpc.Api.GetSuccessfulTransactionResponse;
-      }
-      if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-        throw new Error("Transaction failed on-chain");
-      }
+  /**
+   * Get the list of all registered issuers. No auth required — read-only.
+   */
+  async getIssuers(callerAddress: string, options?: CallOptions): Promise<string[]> {
+    validateStellarAddress(callerAddress);
+    const account = await this.server.getAccount(callerAddress);
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(this.contract.call("get_issuers"))
+      .setTimeout(timeout)
+      .build();
+
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
+    if (SorobanRpc.Api.isSimulationError(result)) {
+      throw new Error(`Simulation failed: ${result.error}`);
     }
-    throw new Error("Transaction confirmation timeout");
+
+    const issuers = scValToNative(
+      (result as SorobanRpc.Api.SimulateTransactionSuccessResponse)
+        .result!.retval
+    ) as string[];
+
+    return issuers;
   }
 }

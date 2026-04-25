@@ -99,10 +99,20 @@ impl CredentialManager {
         );
     }
 
+    /// Upgrade the contract WASM. Only the admin can call this.
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: Bytes) {
+        admin.require_auth();
+        let stored: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
+        if stored != admin {
+            panic!("not the admin");
+        }
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
     /// Register a trusted issuer (admin only).
     pub fn add_issuer(env: Env, issuer: Address) {
         Self::require_admin(&env);
-        let mut issuers = Self::get_issuers(&env);
+        let mut issuers = Self::get_issuers_internal(&env);
         if !issuers.contains(&issuer) {
             if issuers.len() >= MAX_ISSUERS {
                 panic!("MaxIssuersReached");
@@ -116,7 +126,7 @@ impl CredentialManager {
     /// Remove a trusted issuer (admin only).
     pub fn remove_issuer(env: Env, issuer: Address) {
         Self::require_admin(&env);
-        let issuers = Self::get_issuers(&env);
+        let issuers = Self::get_issuers_internal(&env);
         let mut updated = Vec::new(&env);
         for i in issuers.iter() {
             if i != issuer {
@@ -251,9 +261,9 @@ impl CredentialManager {
         Self::fetch_subject_creds(&env, &subject)
     }
 
-    /// Check if an address is a registered issuer.
-    pub fn is_issuer(env: Env, address: Address) -> bool {
-        Self::get_issuers(&env).contains(&address)
+    /// Get the list of all registered issuers. No auth required — read-only.
+    pub fn get_issuers(env: Env) -> Vec<Address> {
+        Self::get_issuers_internal(&env)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -264,13 +274,13 @@ impl CredentialManager {
     }
 
     fn require_issuer(env: &Env, issuer: &Address) {
-        let issuers = Self::get_issuers(env);
+        let issuers = Self::get_issuers_internal(env);
         if !issuers.contains(issuer) {
             panic!("not a registered issuer");
         }
     }
 
-    fn get_issuers(env: &Env) -> Vec<Address> {
+    fn get_issuers_internal(env: &Env) -> Vec<Address> {
         env.storage()
             .instance()
             .get(&ISSUER)
@@ -534,34 +544,44 @@ mod tests {
         client.add_issuer(&Address::generate(&env));
     }
 
+    /// get_issuers returns the list of all registered issuers.
     #[test]
-    fn test_is_issuer() {
+    fn test_get_issuers() {
         let (env, _admin, client) = setup();
 
         let issuer1 = Address::generate(&env);
         let issuer2 = Address::generate(&env);
-        let non_issuer = Address::generate(&env);
+        let issuer3 = Address::generate(&env);
 
-        // Initially, no one is an issuer
-        assert!(!client.is_issuer(&issuer1));
-        assert!(!client.is_issuer(&non_issuer));
-
-        // Add issuer1
         client.add_issuer(&issuer1);
-        assert!(client.is_issuer(&issuer1));
-        assert!(!client.is_issuer(&issuer2));
-        assert!(!client.is_issuer(&non_issuer));
-
-        // Add issuer2
         client.add_issuer(&issuer2);
-        assert!(client.is_issuer(&issuer1));
-        assert!(client.is_issuer(&issuer2));
-        assert!(!client.is_issuer(&non_issuer));
+        client.add_issuer(&issuer3);
 
-        // Remove issuer1
-        client.remove_issuer(&issuer1);
-        assert!(!client.is_issuer(&issuer1));
-        assert!(client.is_issuer(&issuer2));
-        assert!(!client.is_issuer(&non_issuer));
+        let issuers = client.get_issuers();
+        assert_eq!(issuers.len(), 3);
+        assert!(issuers.contains(&issuer1));
+        assert!(issuers.contains(&issuer2));
+        assert!(issuers.contains(&issuer3));
     }
-}
+
+    /// get_issuers reflects add and remove operations.
+    #[test]
+    fn test_get_issuers_after_remove() {
+        let (env, _admin, client) = setup();
+
+        let issuer1 = Address::generate(&env);
+        let issuer2 = Address::generate(&env);
+
+        client.add_issuer(&issuer1);
+        client.add_issuer(&issuer2);
+
+        let issuers_before = client.get_issuers();
+        assert_eq!(issuers_before.len(), 2);
+
+        client.remove_issuer(&issuer1);
+
+        let issuers_after = client.get_issuers();
+        assert_eq!(issuers_after.len(), 1);
+        assert!(!issuers_after.contains(&issuer1));
+        assert!(issuers_after.contains(&issuer2));
+    }
