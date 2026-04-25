@@ -228,6 +228,33 @@ cd frontend && npm install && npm run dev
 cd sdk && npm install && npm run build
 ```
 
+### Deployment Configuration
+
+The `scripts/deploy.sh` script supports configurable network and RPC endpoint via environment variables:
+
+```bash
+# Deploy to testnet (default)
+export STELLAR_SECRET_KEY=S...
+bash scripts/deploy.sh
+
+# Deploy to mainnet
+export STELLAR_SECRET_KEY=S...
+export STELLAR_NETWORK=mainnet
+export STELLAR_RPC_URL=https://soroban-mainnet.stellar.org
+bash scripts/deploy.sh
+
+# Deploy to custom network
+export STELLAR_SECRET_KEY=S...
+export STELLAR_NETWORK=custom
+export STELLAR_RPC_URL=https://your-rpc-endpoint.com
+bash scripts/deploy.sh
+```
+
+**Environment Variables:**
+- `STELLAR_NETWORK` — Network name (default: `testnet`). Can be `testnet`, `mainnet`, or a custom network name.
+- `STELLAR_RPC_URL` — RPC endpoint URL (default: `https://soroban-testnet.stellar.org`).
+- `STELLAR_SECRET_KEY` — Your Stellar secret key (required). Used to sign transactions and deploy contracts.
+
 ---
 
 ## Use Cases

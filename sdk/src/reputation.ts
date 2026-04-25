@@ -35,6 +35,32 @@ export class ReputationClient {
     this.contract = new Contract(config.reputationId);
   }
 
+  /** Get the list of all registered reporters. */
+  async getReporters(callerAddress: string, options?: CallOptions): Promise<string[]> {
+    validateStellarAddress(callerAddress);
+    const account = await this.server.getAccount(callerAddress);
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call("get_reporters_list")
+      )
+      .setTimeout(timeout)
+      .build();
+
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
+    if (SorobanRpc.Api.isSimulationError(result)) {
+      throw new Error(`Simulation failed: ${result.error}`);
+    }
+
+    return scValToNative(
+      (result as SorobanRpc.Api.SimulateTransactionSuccessResponse).result!.retval
+    ) as string[];
+  }
+
   /** Get the reputation record for a subject. */
   async getReputation(callerAddress: string, subjectAddress: string, options?: CallOptions): Promise<ReputationRecord> {
     validateStellarAddress(callerAddress);

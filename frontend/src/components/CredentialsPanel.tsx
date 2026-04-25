@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { CredentialType } from "../../../sdk/src/types";
 import type { WalletState } from "../hooks/useWallet";
 import SkeletonCard from "./SkeletonCard";
@@ -84,6 +84,35 @@ export default function CredentialsPanel({ wallet }: Props) {
   const [issuing, setIssuing] = useState(false);
 
   const [activeFilter, setActiveFilter] = useState<FilterType>("All");
+  const [isIssuer, setIsIssuer] = useState(false);
+  const [checkingIssuer, setCheckingIssuer] = useState(false);
+
+  // Check if connected wallet is a registered issuer
+  useEffect(() => {
+    if (!wallet.connected || !wallet.publicKey) {
+      setIsIssuer(false);
+      return;
+    }
+
+    const checkIssuerStatus = async () => {
+      setCheckingIssuer(true);
+      try {
+        // TODO: wire CredentialClient.isIssuer() from SDK
+        // For now, mock the check
+        await new Promise((r) => setTimeout(r, 300));
+        // Mock: assume addresses starting with specific pattern are issuers
+        setIsIssuer(wallet.publicKey?.startsWith("G") ?? false);
+      } catch {
+        setIsIssuer(false);
+      } finally {
+        setCheckingIssuer(false);
+      }
+    };
+
+    checkIssuerStatus();
+  }, [wallet.connected, wallet.publicKey]);
+  const [isIssuer, setIsIssuer] = useState(false);
+  const [checkingIssuer, setCheckingIssuer] = useState(false);
 
   const filteredCredentials =
     activeFilter === "All"
@@ -241,22 +270,28 @@ export default function CredentialsPanel({ wallet }: Props) {
       <div className="card">
         <h2>Issue Credential</h2>
         {wallet.connected ? (
-          <>
-            <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
-              Issuing as{" "}
-              <span style={{ color: "var(--accent-light)" }}>
-                {wallet.publicKey?.slice(0, 6)}…{wallet.publicKey?.slice(-4)}
-              </span>
+          isIssuer ? (
+            <>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
+                Issuing as{" "}
+                <span style={{ color: "var(--accent-light)" }}>
+                  {wallet.publicKey?.slice(0, 6)}…{wallet.publicKey?.slice(-4)}
+                </span>
+              </p>
+              <input
+                placeholder="Subject address (G…)"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+              />
+              <button onClick={handleIssue} disabled={issuing || !subject}>
+                {issuing ? "Issuing…" : "Issue KYC Credential"}
+              </button>
+            </>
+          ) : (
+            <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
+              {checkingIssuer ? "Checking issuer status…" : "Your wallet is not registered as an issuer. Contact the admin to register."}
             </p>
-            <input
-              placeholder="Subject address (G…)"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-            />
-            <button onClick={handleIssue} disabled={issuing || !subject}>
-              {issuing ? "Issuing…" : "Issue KYC Credential"}
-            </button>
-          </>
+          )
         ) : (
           <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
             Connect your Freighter wallet to issue credentials as a registered issuer.

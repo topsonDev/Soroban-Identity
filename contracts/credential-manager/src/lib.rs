@@ -19,7 +19,7 @@ const MAX_ISSUERS: u32 = 100;
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 #[contracterror]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Copy)]
 pub enum ContractError {
     AlreadyInitialized       = 1,
     UnauthorizedIssuer       = 2,

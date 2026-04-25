@@ -20,7 +20,7 @@ const DEF_THRESH: Symbol = symbol_short!("DEFTHRESH");
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 #[contracterror]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Copy)]
 pub enum ContractError {
     AlreadyInitialized = 1,
     ReporterNotFound = 2,
@@ -276,6 +276,11 @@ impl Reputation {
             None => false,
             Some(rec) => rec.score >= min_score && rec.reporter_count >= min_reporters,
         }
+    }
+
+    /// Get the list of all registered reporters.
+    pub fn get_reporters_list(env: Env) -> Vec<Address> {
+        Self::get_reporters(&env)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

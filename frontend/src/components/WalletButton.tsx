@@ -26,7 +26,9 @@ export default function WalletButton({ wallet }: Props) {
           <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
             via {walletType === "walletconnect" ? "WalletConnect" : "Freighter"}
           </span>
-          <span className="badge badge-green">{short(publicKey)}</span>
+          <span className="badge badge-green" title={publicKey} style={{ cursor: "pointer" }}>
+            {short(publicKey)}
+          </span>
           <button
             onClick={disconnect}
             disabled={txLoading}
