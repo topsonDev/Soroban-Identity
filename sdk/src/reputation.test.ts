@@ -49,7 +49,53 @@ const config: SorobanIdentityConfig = {
   reputationId: "CONTRACT_REPUTATION",
 };
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
+describe("ReputationClient.getReporters", () => {
+  let client: ReputationClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    client = new ReputationClient(config);
+  });
+
+  it("returns decoded reporter addresses array on success", async () => {
+    const { scValToNative } = await import("@stellar/stellar-sdk");
+
+    const mockReporters = ["GREPORTER1", "GREPORTER2", "GREPORTER3"];
+
+    (scValToNative as ReturnType<typeof vi.fn>).mockReturnValue(mockReporters);
+    mockSimulateTransaction.mockResolvedValue({ result: { retval: {} } });
+
+    const result = await client.getReporters("GCALLER");
+
+    expect(result).toEqual(mockReporters);
+    expect(result).toHaveLength(3);
+  });
+
+  it("returns an empty array when no reporters are registered", async () => {
+    const { scValToNative } = await import("@stellar/stellar-sdk");
+
+    (scValToNative as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    mockSimulateTransaction.mockResolvedValue({ result: { retval: {} } });
+
+    const result = await client.getReporters("GCALLER");
+
+    expect(result).toEqual([]);
+  });
+
+  it("throws when simulation returns an error", async () => {
+    mockSimulateTransaction.mockResolvedValue({ error: "contract trap" });
+
+    await expect(
+      client.getReporters("GCALLER")
+    ).rejects.toThrow("Simulation failed: contract trap");
+  });
+
+  it("throws InvalidAddress when callerAddress is invalid", async () => {
+    await expect(
+      client.getReporters("bad-address")
+    ).rejects.toThrow("InvalidAddress");
+  });
+});
 
 describe("ReputationClient.getScoreHistory", () => {
   let client: ReputationClient;

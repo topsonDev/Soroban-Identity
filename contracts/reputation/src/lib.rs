@@ -20,7 +20,7 @@ const DEF_THRESH: Symbol = symbol_short!("DEFTHRESH");
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 #[contracterror]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Copy)]
 pub enum ContractError {
     AlreadyInitialized = 1,
 }
@@ -254,6 +254,11 @@ impl Reputation {
             None => false,
             Some(rec) => rec.score >= min_score && rec.reporter_count >= min_reporters,
         }
+    }
+
+    /// Get the list of all registered reporters.
+    pub fn get_reporters_list(env: Env) -> Vec<Address> {
+        Self::get_reporters(&env)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -553,5 +558,43 @@ mod tests {
         client.initialize(&admin);
         // attacker is not the admin — must panic
         client.transfer_admin(&attacker, &new_admin);
+    }
+
+    #[test]
+    fn test_get_reporters_list() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin     = Address::generate(&env);
+        let reporter1 = Address::generate(&env);
+        let reporter2 = Address::generate(&env);
+
+        client.initialize(&admin);
+
+        // Initially empty
+        let reporters = client.get_reporters_list();
+        assert_eq!(reporters.len(), 0);
+
+        // Add first reporter
+        client.add_reporter(&reporter1);
+        let reporters = client.get_reporters_list();
+        assert_eq!(reporters.len(), 1);
+        assert_eq!(reporters.get(0).unwrap(), reporter1);
+
+        // Add second reporter
+        client.add_reporter(&reporter2);
+        let reporters = client.get_reporters_list();
+        assert_eq!(reporters.len(), 2);
+        assert_eq!(reporters.get(0).unwrap(), reporter1);
+        assert_eq!(reporters.get(1).unwrap(), reporter2);
+
+        // Remove first reporter
+        client.remove_reporter(&reporter1);
+        let reporters = client.get_reporters_list();
+        assert_eq!(reporters.len(), 1);
+        assert_eq!(reporters.get(0).unwrap(), reporter2);
     }
 }
