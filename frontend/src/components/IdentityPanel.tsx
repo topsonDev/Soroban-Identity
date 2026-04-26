@@ -27,6 +27,8 @@ type ErrorState = NetworkError | ContractError | null;
 
 export default function IdentityPanel({ wallet }: Props) {
   const [resolveAddress, setResolveAddress] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
+  const { history, addAddress, clearHistory } = useAddressHistory();
   const [resolveResult, setResolveResult] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [networkError, setNetworkError] = useState<ErrorState>(null);
@@ -62,6 +64,7 @@ export default function IdentityPanel({ wallet }: Props) {
 
   const handleResolve = async () => {
     if (!resolveAddress.trim()) return;
+    addAddress(resolveAddress);
     setResolving(true);
     setResolveResult(null);
     setReputation(null);

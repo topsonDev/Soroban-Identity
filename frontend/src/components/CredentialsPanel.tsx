@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { CredentialType } from "../../../sdk/src/types";
 import type { WalletState } from "../hooks/useWallet";
+import { validateStellarAddress } from "../../../sdk/src/utils";
 import SkeletonCard from "./SkeletonCard";
 
 interface Props {
@@ -87,8 +88,11 @@ export default function CredentialsPanel({ wallet }: Props) {
   const [verifying, setVerifying] = useState(false);
 
   const [subject, setSubject] = useState("");
+  const [claims, setClaims] = useState<Array<{ key: string; value: string }>>([{ key: "", value: "" }]);
+  const [expiresAt, setExpiresAt] = useState("0");
   const [issueResult, setIssueResult] = useState<string | null>(null);
   const [issuing, setIssuing] = useState(false);
+  const [issueErrors, setIssueErrors] = useState<Record<string, string>>({});
 
   const [activeFilter, setActiveFilter] = useState<FilterType>("All");
   const [isIssuer, setIsIssuer] = useState(false);
@@ -121,6 +125,55 @@ export default function CredentialsPanel({ wallet }: Props) {
   const [isIssuer, setIsIssuer] = useState(false);
   const [checkingIssuer, setCheckingIssuer] = useState(false);
 
+  const validateIssueForm = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    // Validate subject address
+    if (!subject.trim()) {
+      errors.subject = "Subject address is required";
+    } else {
+      try {
+        validateStellarAddress(subject);
+      } catch {
+        errors.subject = "Invalid Stellar address";
+      }
+    }
+
+    // Validate at least one claim
+    const filledClaims = claims.filter((c) => c.key.trim() || c.value.trim());
+    if (filledClaims.length === 0) {
+      errors.claims = "At least one claim key-value pair is required";
+    }
+
+    // Validate expiry date
+    const expiryNum = parseInt(expiresAt, 10);
+    if (isNaN(expiryNum) || expiryNum < 0) {
+      errors.expiresAt = "Expiry must be 0 or a positive number";
+    } else if (expiryNum > 0) {
+      const now = Math.floor(Date.now() / 1000);
+      if (expiryNum <= now) {
+        errors.expiresAt = "Expiry date must be in the future";
+      }
+    }
+
+    setIssueErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleAddClaim = () => {
+    setClaims([...claims, { key: "", value: "" }]);
+  };
+
+  const handleRemoveClaim = (index: number) => {
+    setClaims(claims.filter((_, i) => i !== index));
+  };
+
+  const handleClaimChange = (index: number, field: "key" | "value", value: string) => {
+    const updated = [...claims];
+    updated[index][field] = value;
+    setClaims(updated);
+  };
+
   const filteredCredentials =
     activeFilter === "All"
       ? MOCK_CREDENTIALS
@@ -149,7 +202,10 @@ export default function CredentialsPanel({ wallet }: Props) {
   };
 
   const handleIssue = async () => {
-    if (!wallet.connected || !subject.trim()) return;
+    if (!wallet.connected) return;
+    
+    if (!validateIssueForm()) return;
+
     setIssuing(true);
     setIssueResult(null);
     try {
@@ -288,12 +344,104 @@ export default function CredentialsPanel({ wallet }: Props) {
                   {wallet.publicKey?.slice(0, 6)}…{wallet.publicKey?.slice(-4)}
                 </span>
               </p>
-              <input
-                placeholder="Subject address (G…)"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-              />
-              <button onClick={handleIssue} disabled={issuing || !subject}>
+              
+              <div style={{ marginBottom: "1rem" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
+                  Subject Address
+                </label>
+                <input
+                  placeholder="Subject address (G…)"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  style={{
+                    borderColor: issueErrors.subject ? "var(--error)" : undefined,
+                  }}
+                />
+                {issueErrors.subject && (
+                  <p style={{ color: "var(--error)", fontSize: "0.75rem", marginTop: "0.25rem" }}>
+                    {issueErrors.subject}
+                  </p>
+                )}
+              </div>
+
+              <div style={{ marginBottom: "1rem" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
+                  Claims
+                </label>
+                {claims.map((claim, idx) => (
+                  <div key={idx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                    <input
+                      placeholder="Key"
+                      value={claim.key}
+                      onChange={(e) => handleClaimChange(idx, "key", e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <input
+                      placeholder="Value"
+                      value={claim.value}
+                      onChange={(e) => handleClaimChange(idx, "value", e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    {claims.length > 1 && (
+                      <button
+                        onClick={() => handleRemoveClaim(idx)}
+                        style={{
+                          padding: "0.5rem 0.75rem",
+                          background: "var(--error)",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "0.25rem",
+                          cursor: "pointer",
+                          fontSize: "0.85rem",
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  onClick={handleAddClaim}
+                  style={{
+                    padding: "0.5rem 0.75rem",
+                    background: "var(--accent-light)",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "0.25rem",
+                    cursor: "pointer",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  + Add Claim
+                </button>
+                {issueErrors.claims && (
+                  <p style={{ color: "var(--error)", fontSize: "0.75rem", marginTop: "0.25rem" }}>
+                    {issueErrors.claims}
+                  </p>
+                )}
+              </div>
+
+              <div style={{ marginBottom: "1rem" }}>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.85rem", fontWeight: 600 }}>
+                  Expires At (Unix timestamp, 0 for no expiry)
+                </label>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={expiresAt}
+                  onChange={(e) => setExpiresAt(e.target.value)}
+                  style={{
+                    borderColor: issueErrors.expiresAt ? "var(--error)" : undefined,
+                  }}
+                />
+                {issueErrors.expiresAt && (
+                  <p style={{ color: "var(--error)", fontSize: "0.75rem", marginTop: "0.25rem" }}>
+                    {issueErrors.expiresAt}
+                  </p>
+                )}
+              </div>
+
+              <button onClick={handleIssue} disabled={issuing || Object.keys(issueErrors).length > 0}>
                 {issuing ? "Issuing…" : "Issue KYC Credential"}
               </button>
             </>
