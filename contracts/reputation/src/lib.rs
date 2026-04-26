@@ -23,8 +23,13 @@ const DEF_THRESH: Symbol = symbol_short!("DEFTHRESH");
 #[derive(Clone, Debug, PartialEq, Copy)]
 pub enum ContractError {
     AlreadyInitialized = 1,
-    ReporterNotFound = 2,
+    ReporterNotFound   = 2,
+    RateLimitExceeded  = 3,
+    ReasonTooLong      = 4,
 }
+
+/// Minimum ledger interval between submissions from the same reporter for the same subject.
+const MIN_INTERVAL: u32 = 100;
 
 // ── Data types ────────────────────────────────────────────────────────────────
 
@@ -166,9 +171,17 @@ impl Reputation {
             return Err(ContractError::ReasonTooLong);
         }
 
-        let now = env.ledger().timestamp();
+        // Rate limiting: enforce MIN_INTERVAL ledgers between submissions per (reporter, subject)
+        let rate_key = Self::rate_key(&subject, &reporter);
+        let current_ledger = env.ledger().sequence();
+        if let Some(last_ledger) = env.storage().persistent().get::<(Symbol, Address, Address), u32>(&rate_key) {
+            if current_ledger <= last_ledger + MIN_INTERVAL {
+                return Err(ContractError::RateLimitExceeded);
+            }
+        }
+        env.storage().persistent().set(&rate_key, &current_ledger);
 
-        // Update aggregate record
+        let now = env.ledger().timestamp();
         let rec_key = Self::record_key(&subject);
         let mut record: ReputationRecord = env
             .storage()
@@ -324,6 +337,10 @@ impl Reputation {
     fn history_key(subject: &Address, reporter: &Address) -> (Symbol, Address, Address) {
         (symbol_short!("h"), subject.clone(), reporter.clone())
     }
+
+    fn rate_key(subject: &Address, reporter: &Address) -> (Symbol, Address, Address) {
+        (symbol_short!("rl"), subject.clone(), reporter.clone())
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -365,6 +382,7 @@ mod tests {
 
         let reason = String::from_str(&env, "completed KYC");
         client.submit_score(&reporter, &subject, &50, &reason);
+        env.ledger().with_mut(|li| li.sequence_number += 101);
         client.submit_score(&reporter, &subject, &25, &reason);
 
         let rec = client.get_reputation(&subject);
@@ -387,10 +405,11 @@ mod tests {
         client.initialize(&admin);
         client.add_reporter(&reporter);
 
-        // Submit 5 entries
+        // Submit 5 entries (advance ledger between each to bypass rate limit)
         for i in 0..5_i64 {
             let reason = String::from_str(&env, "reason");
             client.submit_score(&reporter, &subject, &i, &reason);
+            env.ledger().with_mut(|li| li.sequence_number += 101);
         }
 
         // First page: offset=0, limit=2 → entries 0,1
@@ -547,6 +566,7 @@ mod tests {
         let r1 = String::from_str(&env, "reporter1 reason");
         let r2 = String::from_str(&env, "reporter2 reason");
         client.submit_score(&reporter1, &subject, &10, &r1);
+        env.ledger().with_mut(|li| li.sequence_number += 101);
         client.submit_score(&reporter1, &subject, &20, &r1);
         client.submit_score(&reporter2, &subject, &99, &r2);
 
@@ -622,6 +642,37 @@ mod tests {
         // Unknown reporter should return error
         let result = client.try_get_history(&subject, &unknown, &0, &10);
         assert_eq!(result, Err(Ok(ContractError::ReporterNotFound)));
+    }
+
+    /// submit_score must return RateLimitExceeded when called again within MIN_INTERVAL ledgers.
+    #[test]
+    fn test_submit_score_rate_limit() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin    = Address::generate(&env);
+        let reporter = Address::generate(&env);
+        let subject  = Address::generate(&env);
+
+        client.initialize(&admin);
+        client.add_reporter(&reporter);
+
+        let reason = String::from_str(&env, "first");
+        // First submission succeeds
+        client.submit_score(&reporter, &subject, &10, &reason);
+
+        // Second submission in the same ledger must fail
+        let result = client.try_submit_score(&reporter, &subject, &10, &reason);
+        assert_eq!(result, Err(Ok(ContractError::RateLimitExceeded)));
+
+        // Advance ledger past MIN_INTERVAL (100)
+        env.ledger().with_mut(|li| li.sequence_number += 101);
+
+        // Now it should succeed again
+        client.submit_score(&reporter, &subject, &10, &reason);
     }
 
     /// Removing a reporter should decrement reporter_count in passes_sybil_check.

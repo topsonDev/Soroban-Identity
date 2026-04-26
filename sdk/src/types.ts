@@ -15,6 +15,8 @@ export interface Credential {
   issuer: string;
   credentialType: CredentialType;
   claims: Record<string, string>;
+  /** SHA-256 hash of the off-chain claims payload (hex-encoded 32 bytes) */
+  claimsHash: string;
   signature: string; // hex
   issuedAt: number;
   expiresAt: number; // 0 = no expiry

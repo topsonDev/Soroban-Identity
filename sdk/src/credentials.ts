@@ -23,6 +23,7 @@ export class CredentialClient {
 
   /**
    * Issue a credential to a subject. Caller must be a registered issuer.
+   * @param claimsHashHex 64-char hex string (32 bytes) — SHA-256 hash of the off-chain claims payload.
    * @param signatureHex Optional pre-computed 64-byte signature as a 128-char hex string.
    *                     If omitted, the signature is derived from issuerKeypair.
    */
@@ -31,10 +32,17 @@ export class CredentialClient {
     subjectAddress: string,
     credentialType: CredentialType,
     claims: Record<string, string>,
+    claimsHashHex: string,
     expiresAt = 0,
     options?: CallOptions,
     signatureHex?: string
   ): Promise<{ credentialId: string } & WriteResult> {
+    if (!/^[0-9a-fA-F]{64}$/.test(claimsHashHex)) {
+      throw new Error(
+        "InvalidClaimsHashFormat: claimsHash must be a 64-character hex string (32 bytes)"
+      );
+    }
+
     if (signatureHex !== undefined) {
       if (!/^[0-9a-fA-F]{128}$/.test(signatureHex)) {
         throw new Error(
@@ -64,6 +72,7 @@ export class CredentialClient {
           nativeToScVal(subjectAddress, { type: "address" }),
           nativeToScVal(credentialType, { type: "symbol" }),
           nativeToScVal(claims, { type: "map" }),
+          nativeToScVal(Buffer.from(claimsHashHex, "hex"), { type: "bytes" }),
           nativeToScVal(signature, { type: "bytes" }),
           nativeToScVal(expiresAt, { type: "u64" })
         )

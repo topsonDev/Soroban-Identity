@@ -58,6 +58,8 @@ pub struct Credential {
     pub credential_type: CredentialType,
     /// Arbitrary claims (key-value)
     pub claims: Map<String, String>,
+    /// SHA-256 hash of the off-chain claims payload (privacy-preserving)
+    pub claims_hash: BytesN<32>,
     /// Issuer's signature over the credential hash
     pub signature: Bytes,
     /// Issuance timestamp
@@ -145,6 +147,7 @@ impl CredentialManager {
         subject: Address,
         credential_type: CredentialType,
         claims: Map<String, String>,
+        claims_hash: BytesN<32>,
         signature: Bytes,
         expires_at: u64,
     ) -> BytesN<32> {
@@ -184,6 +187,7 @@ impl CredentialManager {
             issuer: issuer.clone(),
             credential_type: credential_type.clone(),
             claims,
+            claims_hash,
             signature,
             issued_at: now,
             expires_at,
@@ -204,7 +208,10 @@ impl CredentialManager {
         type_creds.push_back(id.clone());
         env.storage().persistent().set(&type_key, &type_creds);
 
-        env.events().publish((CRED, symbol_short!("issued")), (issuer, subject));
+        env.events().publish(
+            (CRED, symbol_short!("issued")),
+            (id.clone(), subject, issuer, credential_type),
+        );
 
         id
     }
@@ -226,7 +233,10 @@ impl CredentialManager {
 
         cred.revoked = true;
         env.storage().persistent().set(&key, &cred);
-        env.events().publish((CRED, symbol_short!("revoked")), credential_id);
+        env.events().publish(
+            (CRED, symbol_short!("revoked")),
+            (credential_id, issuer),
+        );
         Ok(())
     }
 
@@ -244,6 +254,16 @@ impl CredentialManager {
                 }
                 true
             }
+        }
+    }
+
+    /// Verify that the supplied hash matches the stored claims_hash for a credential.
+    /// Returns true only when the credential exists, is valid, and the hash matches.
+    pub fn verify_claims_hash(env: Env, credential_id: BytesN<32>, hash: BytesN<32>) -> bool {
+        let key = Self::cred_key(&credential_id);
+        match env.storage().persistent().get::<(Symbol, BytesN<32>), Credential>(&key) {
+            None => false,
+            Some(cred) => cred.claims_hash == hash,
         }
     }
 
@@ -348,6 +368,7 @@ mod tests {
         client.add_issuer(&issuer);
 
         let claims: Map<String, String> = Map::new(&env);
+        let claims_hash = BytesN::from_array(&env, &[1u8; 32]);
         let sig = Bytes::from_array(&env, &[0u8; 64]);
 
         let cred_id = client.issue_credential(
@@ -355,6 +376,7 @@ mod tests {
             &subject,
             &CredentialType::Kyc,
             &claims,
+            &claims_hash,
             &sig,
             &0u64,
         );
@@ -372,9 +394,10 @@ mod tests {
         client.add_issuer(&issuer);
 
         let claims: Map<String, String> = Map::new(&env);
+        let claims_hash = BytesN::from_array(&env, &[0u8; 32]);
         let sig = Bytes::from_array(&env, &[0u8; 64]);
         let cred_id = client.issue_credential(
-            &issuer, &subject, &CredentialType::Kyc, &claims, &sig, &0u64,
+            &issuer, &subject, &CredentialType::Kyc, &claims, &claims_hash, &sig, &0u64,
         );
 
         client.revoke_credential(&issuer, &cred_id);
@@ -392,12 +415,13 @@ mod tests {
         client.add_issuer(&issuer);
 
         let claims: Map<String, String> = Map::new(&env);
+        let claims_hash = BytesN::from_array(&env, &[0u8; 32]);
         let sig = Bytes::from_array(&env, &[0u8; 64]);
         // expires_at is in the past (timestamp 1 is before the default ledger time)
         let past_expiry = env.ledger().timestamp().saturating_sub(1);
 
         client.issue_credential(
-            &issuer, &subject, &CredentialType::Kyc, &claims, &sig, &past_expiry,
+            &issuer, &subject, &CredentialType::Kyc, &claims, &claims_hash, &sig, &past_expiry,
         );
     }
 
@@ -411,10 +435,11 @@ mod tests {
         let subject = Address::generate(&env);
 
         let claims: Map<String, String> = Map::new(&env);
+        let claims_hash = BytesN::from_array(&env, &[0u8; 32]);
         let sig = Bytes::from_array(&env, &[0u8; 64]);
 
         client.issue_credential(
-            &unauthorized, &subject, &CredentialType::Kyc, &claims, &sig, &0u64,
+            &unauthorized, &subject, &CredentialType::Kyc, &claims, &claims_hash, &sig, &0u64,
         );
     }
 
@@ -428,11 +453,12 @@ mod tests {
         client.add_issuer(&issuer);
 
         let claims: Map<String, String> = Map::new(&env);
+        let claims_hash = BytesN::from_array(&env, &[0u8; 32]);
         let sig = Bytes::from_array(&env, &[0u8; 64]);
         let expires_at = env.ledger().timestamp() + 100;
 
         let cred_id = client.issue_credential(
-            &issuer, &subject, &CredentialType::Kyc, &claims, &sig, &expires_at,
+            &issuer, &subject, &CredentialType::Kyc, &claims, &claims_hash, &sig, &expires_at,
         );
 
         // Valid before expiry
@@ -460,9 +486,10 @@ mod tests {
         client.add_issuer(&issuer2);
 
         let claims: Map<String, String> = Map::new(&env);
+        let claims_hash = BytesN::from_array(&env, &[0u8; 32]);
         let sig = Bytes::from_array(&env, &[0u8; 64]);
         let cred_id = client.issue_credential(
-            &issuer1, &subject, &CredentialType::Kyc, &claims, &sig, &0u64,
+            &issuer1, &subject, &CredentialType::Kyc, &claims, &claims_hash, &sig, &0u64,
         );
 
         // issuer2 attempts to revoke a credential they did not issue
@@ -492,11 +519,12 @@ mod tests {
             String::from_str(&env, "name"),
             String::from_str(&env, "Alice"),
         );
+        let claims_hash = BytesN::from_array(&env, &[42u8; 32]);
         let sig = Bytes::from_array(&env, &[1u8; 64]);
         let expires_at = 9999u64;
 
         let cred_id = client.issue_credential(
-            &issuer, &subject, &CredentialType::Achievement, &claims, &sig, &expires_at,
+            &issuer, &subject, &CredentialType::Achievement, &claims, &claims_hash, &sig, &expires_at,
         );
 
         let cred = client.get_credential(&cred_id);
@@ -504,6 +532,7 @@ mod tests {
         assert_eq!(cred.subject, subject);
         assert_eq!(cred.credential_type, CredentialType::Achievement);
         assert_eq!(cred.expires_at, expires_at);
+        assert_eq!(cred.claims_hash, claims_hash);
         assert!(!cred.revoked);
     }
 
@@ -584,4 +613,26 @@ mod tests {
         assert_eq!(issuers_after.len(), 1);
         assert!(!issuers_after.contains(&issuer1));
         assert!(issuers_after.contains(&issuer2));
+    }
+
+    /// verify_claims_hash returns true for the correct hash and false for a wrong one.
+    #[test]
+    fn test_verify_claims_hash() {
+        let (env, _admin, client) = setup();
+
+        let issuer = Address::generate(&env);
+        let subject = Address::generate(&env);
+        client.add_issuer(&issuer);
+
+        let claims: Map<String, String> = Map::new(&env);
+        let correct_hash = BytesN::from_array(&env, &[7u8; 32]);
+        let wrong_hash   = BytesN::from_array(&env, &[8u8; 32]);
+        let sig = Bytes::from_array(&env, &[0u8; 64]);
+
+        let cred_id = client.issue_credential(
+            &issuer, &subject, &CredentialType::Kyc, &claims, &correct_hash, &sig, &0u64,
+        );
+
+        assert!(client.verify_claims_hash(&cred_id, &correct_hash));
+        assert!(!client.verify_claims_hash(&cred_id, &wrong_hash));
     }

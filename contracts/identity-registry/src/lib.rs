@@ -122,7 +122,7 @@ impl IdentityRegistry {
         let count: u32 = env.storage().instance().get(&DID_COUNT).unwrap_or(0);
         env.storage().instance().set(&DID_COUNT, &(count + 1));
         
-        env.events().publish((IDENTITY, symbol_short!("created")), controller);
+        env.events().publish((IDENTITY, symbol_short!("created")), (controller, now));
 
         Ok(did_id)
     }
@@ -142,7 +142,13 @@ impl IdentityRegistry {
 
         storage.set(&key, &doc);
         storage.extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
-        env.events().publish((IDENTITY, symbol_short!("updated")), controller);
+
+        // Hash the DID id + updated_at as a deterministic metadata fingerprint
+        let mut hash_input = Bytes::new(&env);
+        hash_input.extend_from_slice(&doc.id.clone().into_bytes());
+        hash_input.extend_from_array(&doc.updated_at.to_be_bytes());
+        let meta_hash = env.crypto().sha256(&hash_input);
+        env.events().publish((IDENTITY, symbol_short!("updated")), (controller, meta_hash));
         Ok(())
     }
 
@@ -166,7 +172,7 @@ impl IdentityRegistry {
             env.storage().instance().set(&DID_COUNT, &(count - 1));
         }
         
-        env.events().publish((IDENTITY, symbol_short!("deactivated")), controller);
+        env.events().publish((IDENTITY, symbol_short!("deactivated")), (controller, doc.updated_at));
     }
 
     /// Resolve a DID document by controller address.
