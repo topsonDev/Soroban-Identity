@@ -146,4 +146,15 @@ describe('IdentityClient', () => {
   it('hasActiveDid — throws InvalidAddress for an invalid address', async () => {
     await expect(client.hasActiveDid('bad')).rejects.toThrow('InvalidAddress');
   });
+
+  it('getStorageStats — returns decoded stats on success', async () => {
+    const mockStats = { totalDids: 5, activeDids: 3 };
+    mockIsSimulationError.mockReturnValue(false);
+    mockSimulateTransaction.mockResolvedValue({ result: { retval: {} } });
+    const { scValToNative } = await import('@stellar/stellar-sdk');
+    (scValToNative as ReturnType<typeof vi.fn>).mockReturnValue(mockStats);
+
+    const result = await client.getStorageStats('GCALLER');
+    expect(result).toEqual(mockStats);
+  });
 });

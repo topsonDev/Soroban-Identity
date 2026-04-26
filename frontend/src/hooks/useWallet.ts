@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import SignClient from "@walletconnect/sign-client";
 
 // ── Freighter types ───────────────────────────────────────────────────────────
@@ -97,6 +97,46 @@ export function useWallet() {
       }));
     }
   }, []);
+
+  // ── Freighter account-change detection ─────────────────────────────────────
+  // Poll Freighter every 2 s while connected to detect mid-session account switches.
+
+  useEffect(() => {
+    if (state.walletType !== "freighter" || !state.connected) return;
+
+    const interval = setInterval(async () => {
+      if (!window.freighter) return;
+      try {
+        const currentKey = await window.freighter.getPublicKey();
+        if (currentKey !== state.publicKey) {
+          // Account switched — update state and clear cached data
+          const { networkPassphrase } = await window.freighter.getNetwork();
+          setState({
+            publicKey: currentKey,
+            networkPassphrase,
+            connected: true,
+            connecting: false,
+            walletType: "freighter",
+            txLoading: false,
+            error: null,
+          });
+        }
+      } catch {
+        // Freighter became unavailable — disconnect gracefully
+        setState({
+          publicKey: null,
+          networkPassphrase: null,
+          connected: false,
+          connecting: false,
+          walletType: null,
+          txLoading: false,
+          error: null,
+        });
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [state.walletType, state.connected, state.publicKey]);
 
   // ── WalletConnect ───────────────────────────────────────────────────────────
 

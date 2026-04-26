@@ -21,12 +21,21 @@ pub enum ContractError {
 const IDENTITY: Symbol = symbol_short!("IDENTITY");
 const ADMIN: Symbol = symbol_short!("ADMIN");
 const DID_COUNT: Symbol = symbol_short!("DIDCNT");
+const TOTAL_DIDS: Symbol = symbol_short!("TOTDIDS");
 
 /// ~1 year in ledgers (5-second ledger close time).
 /// Used as the TTL extension on every persistent read/write.
 const TTL_LEDGERS: u32 = 6_312_000;
 
 // ── Data types ────────────────────────────────────────────────────────────────
+
+/// Storage usage statistics for the identity registry.
+#[contracttype]
+#[derive(Clone)]
+pub struct IdentityStorageStats {
+    pub total_dids: u32,
+    pub active_dids: u32,
+}
 
 /// W3C-aligned DID document stored on-chain.
 #[contracttype]
@@ -118,9 +127,11 @@ impl IdentityRegistry {
         storage.set(&key, &doc);
         storage.extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
         
-        // Increment DID count
+        // Increment active DID count and total DID count
         let count: u32 = env.storage().instance().get(&DID_COUNT).unwrap_or(0);
         env.storage().instance().set(&DID_COUNT, &(count + 1));
+        let total: u32 = env.storage().instance().get(&TOTAL_DIDS).unwrap_or(0);
+        env.storage().instance().set(&TOTAL_DIDS, &(total + 1));
         
         env.events().publish((IDENTITY, symbol_short!("created")), controller);
 
@@ -185,7 +196,7 @@ impl IdentityRegistry {
     /// Check whether an address has an active DID.
     pub fn has_active_did(env: Env, controller: Address) -> bool {
         let key = Self::did_key(&env, &controller);
-        match env.storage().persistent().get::<Bytes, DidDocument>(&key) {
+        match env.storage().persistent().get::<_, DidDocument>(&key) {
             Some(doc) => doc.active,
             None => false,
         }
@@ -194,6 +205,14 @@ impl IdentityRegistry {
     /// Get the total count of active DIDs.
     pub fn get_did_count(env: Env) -> u32 {
         env.storage().instance().get(&DID_COUNT).unwrap_or(0)
+    }
+
+    /// Get storage usage statistics.
+    pub fn get_storage_stats(env: Env) -> IdentityStorageStats {
+        IdentityStorageStats {
+            total_dids: env.storage().instance().get(&TOTAL_DIDS).unwrap_or(0),
+            active_dids: env.storage().instance().get(&DID_COUNT).unwrap_or(0),
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -404,5 +423,37 @@ mod tests {
 
         let result = client.try_update_did(&user, &metadata);
         assert_eq!(result, Err(Ok(ContractError::MetadataTooLong)));
+    }
+
+    /// get_storage_stats returns correct total and active DID counts.
+    #[test]
+    fn test_get_storage_stats() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, IdentityRegistry);
+        let client = IdentityRegistryClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let stats = client.get_storage_stats();
+        assert_eq!(stats.total_dids, 0);
+        assert_eq!(stats.active_dids, 0);
+
+        let user1 = Address::generate(&env);
+        let user2 = Address::generate(&env);
+        client.create_did(&user1, &Map::new(&env));
+        client.create_did(&user2, &Map::new(&env));
+
+        let stats = client.get_storage_stats();
+        assert_eq!(stats.total_dids, 2);
+        assert_eq!(stats.active_dids, 2);
+
+        client.deactivate_did(&user1);
+
+        let stats = client.get_storage_stats();
+        assert_eq!(stats.total_dids, 2);
+        assert_eq!(stats.active_dids, 1);
     }
 }
