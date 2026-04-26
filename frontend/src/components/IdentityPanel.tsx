@@ -1,13 +1,10 @@
 import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { WalletState } from '../hooks/useWallet';
-import type { ReputationRecord } from '../../../sdk/src/reputation';
-<<<<<<< fix/frontend-ux-issues
+import type { ReputationRecord, ScoreHistoryEntry } from '../../../sdk/src/reputation';
+import { useAddressHistory } from '../hooks/useAddressHistory';
 import SkeletonCard from './SkeletonCard';
-=======
-import type { ScoreHistoryEntry } from '../../../sdk/src/reputation';
 import ReputationChart from './ReputationChart';
->>>>>>> main
 
 interface Props {
   wallet: WalletState & {
@@ -18,6 +15,8 @@ interface Props {
 
 export default function IdentityPanel({ wallet }: Props) {
   const [resolveAddress, setResolveAddress] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
+  const { history, addAddress, clearHistory } = useAddressHistory();
   const [resolveResult, setResolveResult] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [reputation, setReputation] = useState<ReputationRecord | null>(null);
@@ -44,6 +43,7 @@ export default function IdentityPanel({ wallet }: Props) {
 
   const handleResolve = async () => {
     if (!resolveAddress.trim()) return;
+    addAddress(resolveAddress);
     setResolving(true);
     setResolveResult(null);
     setReputation(null);
@@ -208,11 +208,75 @@ export default function IdentityPanel({ wallet }: Props) {
     <>
       <div className="card">
         <h2>Resolve DID</h2>
-        <input
-          placeholder="Stellar address (G…)"
-          value={resolveAddress}
-          onChange={(e) => setResolveAddress(e.target.value)}
-        />
+        <div style={{ position: 'relative', marginBottom: '0.5rem' }}>
+          <input
+            placeholder="Stellar address (G…)"
+            value={resolveAddress}
+            onChange={(e) => setResolveAddress(e.target.value)}
+            onFocus={() => setShowHistory(true)}
+          />
+          {showHistory && history.length > 0 && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                background: 'var(--card-bg)',
+                border: '1px solid var(--border-input)',
+                borderTop: 'none',
+                borderRadius: '0 0 0.5rem 0.5rem',
+                zIndex: 10,
+                maxHeight: '200px',
+                overflowY: 'auto',
+              }}
+            >
+              {history.map((addr, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setResolveAddress(addr);
+                    setShowHistory(false);
+                  }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    padding: '0.5rem 1rem',
+                    textAlign: 'left',
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: idx < history.length - 1 ? '1px solid var(--border-input)' : 'none',
+                    cursor: 'pointer',
+                    color: 'var(--text)',
+                    fontSize: '0.85rem',
+                    fontFamily: 'monospace',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--card-bg-accent)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  {addr}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {history.length > 0 && (
+          <button
+            onClick={clearHistory}
+            style={{
+              padding: '0.3rem 0.6rem',
+              fontSize: '0.75rem',
+              background: 'var(--error)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '0.25rem',
+              cursor: 'pointer',
+              marginBottom: '0.5rem',
+            }}
+          >
+            Clear History
+          </button>
+        )}
         <button onClick={handleResolve} disabled={resolving || !resolveAddress}>
           {resolving ? 'Resolving…' : 'Resolve'}
         </button>
