@@ -11,6 +11,7 @@ const ADMIN: Symbol = symbol_short!("ADMIN");
 const ISSUER: Symbol = symbol_short!("ISSUER");
 const CRED: Symbol = symbol_short!("CRED");
 const IDSEQ: Symbol = symbol_short!("IDSEQ");
+const REVOKED_CNT: Symbol = symbol_short!("REVCNT");
 
 const MAX_CREDENTIALS_PER_TYPE_PER_ISSUER: u32 = 5;
 
@@ -25,14 +26,16 @@ pub enum ContractError {
     UnauthorizedIssuer       = 2,
 }
 
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum CredentialError {
-    CredentialLimitExceeded,
-    CredentialAlreadyExpired,
-}
-
 // ── Data types ────────────────────────────────────────────────────────────────
+
+/// Storage usage statistics for the credential manager.
+#[contracttype]
+#[derive(Clone)]
+pub struct CredentialStorageStats {
+    pub total_credentials: u32,
+    pub revoked_credentials: u32,
+    pub active_credentials: u32,
+}
 
 /// Credential types supported by the protocol.
 #[contracttype]
@@ -226,6 +229,8 @@ impl CredentialManager {
 
         cred.revoked = true;
         env.storage().persistent().set(&key, &cred);
+        let revoked: u32 = env.storage().instance().get(&REVOKED_CNT).unwrap_or(0);
+        env.storage().instance().set(&REVOKED_CNT, &(revoked + 1));
         env.events().publish((CRED, symbol_short!("revoked")), credential_id);
         Ok(())
     }
@@ -264,6 +269,17 @@ impl CredentialManager {
     /// Get the list of all registered issuers. No auth required — read-only.
     pub fn get_issuers(env: Env) -> Vec<Address> {
         Self::get_issuers_internal(&env)
+    }
+
+    /// Get storage usage statistics.
+    pub fn get_storage_stats(env: Env) -> CredentialStorageStats {
+        let total: u32 = env.storage().instance().get(&IDSEQ).unwrap_or(0);
+        let revoked: u32 = env.storage().instance().get(&REVOKED_CNT).unwrap_or(0);
+        CredentialStorageStats {
+            total_credentials: total,
+            revoked_credentials: revoked,
+            active_credentials: total.saturating_sub(revoked),
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -585,3 +601,35 @@ mod tests {
         assert!(!issuers_after.contains(&issuer1));
         assert!(issuers_after.contains(&issuer2));
     }
+
+    /// get_storage_stats returns correct credential counts.
+    #[test]
+    fn test_get_storage_stats() {
+        let (env, _admin, client) = setup();
+
+        let issuer = Address::generate(&env);
+        let subject = Address::generate(&env);
+        client.add_issuer(&issuer);
+
+        let stats = client.get_storage_stats();
+        assert_eq!(stats.total_credentials, 0);
+        assert_eq!(stats.revoked_credentials, 0);
+        assert_eq!(stats.active_credentials, 0);
+
+        let sig = Bytes::from_array(&env, &[0u8; 64]);
+        let id1 = client.issue_credential(&issuer, &subject, &CredentialType::Kyc, &Map::new(&env), &sig, &0u64);
+        let _id2 = client.issue_credential(&issuer, &subject, &CredentialType::Achievement, &Map::new(&env), &sig, &0u64);
+
+        let stats = client.get_storage_stats();
+        assert_eq!(stats.total_credentials, 2);
+        assert_eq!(stats.revoked_credentials, 0);
+        assert_eq!(stats.active_credentials, 2);
+
+        client.revoke_credential(&issuer, &id1);
+
+        let stats = client.get_storage_stats();
+        assert_eq!(stats.total_credentials, 2);
+        assert_eq!(stats.revoked_credentials, 1);
+        assert_eq!(stats.active_credentials, 1);
+    }
+}

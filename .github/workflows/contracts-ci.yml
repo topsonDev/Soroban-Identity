@@ -10,6 +10,37 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  lint:
+    name: Clippy Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable with clippy
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      - name: Cache Rust toolchain and Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            Soroban-Identity/contracts/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Soroban-Identity/contracts/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run clippy
+        working-directory: Soroban-Identity/contracts
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
   build-and-test:
     name: Build & Test Soroban Contracts
     runs-on: ubuntu-latest

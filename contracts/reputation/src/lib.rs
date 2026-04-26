@@ -8,7 +8,7 @@
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, contracterror, symbol_short,
-    Address, Env, Symbol, Vec,
+    Address, Bytes, Env, Symbol, Vec,
 };
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
@@ -16,6 +16,8 @@ use soroban_sdk::{
 const ADMIN: Symbol    = symbol_short!("ADMIN");
 const REPORTER: Symbol = symbol_short!("REPORTER");
 const DEF_THRESH: Symbol = symbol_short!("DEFTHRESH");
+const SUBJECT_CNT: Symbol = symbol_short!("SUBCNT");
+const SCORE_CNT: Symbol = symbol_short!("SCRCNT");
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 
@@ -24,9 +26,18 @@ const DEF_THRESH: Symbol = symbol_short!("DEFTHRESH");
 pub enum ContractError {
     AlreadyInitialized = 1,
     ReporterNotFound = 2,
+    ReasonTooLong = 3,
 }
 
 // ── Data types ────────────────────────────────────────────────────────────────
+
+/// Storage usage statistics for the reputation contract.
+#[contracttype]
+#[derive(Clone)]
+pub struct ReputationStorageStats {
+    pub total_subjects: u32,
+    pub total_score_entries: u32,
+}
 
 /// Aggregated reputation record for a subject.
 #[contracttype]
@@ -90,7 +101,7 @@ impl Reputation {
     }
 
     /// Upgrade the contract WASM. Only the admin can call this.
-    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: Vec<u8>) {
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: Bytes) {
         admin.require_auth();
         let stored: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
         if stored != admin {
@@ -170,11 +181,9 @@ impl Reputation {
 
         // Update aggregate record
         let rec_key = Self::record_key(&subject);
-        let mut record: ReputationRecord = env
-            .storage()
-            .persistent()
-            .get(&rec_key)
-            .unwrap_or(ReputationRecord {
+        let existing_record: Option<ReputationRecord> = env.storage().persistent().get(&rec_key);
+        let is_new_subject = existing_record.is_none();
+        let mut record: ReputationRecord = existing_record.unwrap_or(ReputationRecord {
                 subject: subject.clone(),
                 score: 0,
                 reporter_count: 0,
@@ -189,6 +198,12 @@ impl Reputation {
         let is_new = !env.storage().persistent().has(&history_key);
         if is_new {
             record.reporter_count = record.reporter_count.saturating_add(1);
+        }
+
+        // Track new subject
+        if is_new_subject {
+            let cnt: u32 = env.storage().instance().get(&SUBJECT_CNT).unwrap_or(0);
+            env.storage().instance().set(&SUBJECT_CNT, &(cnt + 1));
         }
 
         env.storage().persistent().set(&rec_key, &record);
@@ -207,6 +222,10 @@ impl Reputation {
             submitted_at: now,
         });
         env.storage().persistent().set(&history_key, &history);
+
+        // Increment total score entries counter
+        let score_cnt: u32 = env.storage().instance().get(&SCORE_CNT).unwrap_or(0);
+        env.storage().instance().set(&SCORE_CNT, &(score_cnt + 1));
 
         env.events()
             .publish((symbol_short!("SCORE"), symbol_short!("updated")), (reporter, subject, delta));
@@ -295,6 +314,14 @@ impl Reputation {
     /// Get the list of all registered reporters.
     pub fn get_reporters_list(env: Env) -> Vec<Address> {
         Self::get_reporters(&env)
+    }
+
+    /// Get storage usage statistics.
+    pub fn get_storage_stats(env: Env) -> ReputationStorageStats {
+        ReputationStorageStats {
+            total_subjects: env.storage().instance().get(&SUBJECT_CNT).unwrap_or(0),
+            total_score_entries: env.storage().instance().get(&SCORE_CNT).unwrap_or(0),
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -659,5 +686,36 @@ mod tests {
         assert!(!client.passes_sybil_check(&subject, &50, &3));
         // But should pass with min_reporters=2
         assert!(client.passes_sybil_check(&subject, &50, &2));
+    }
+
+    /// get_storage_stats returns correct subject and score entry counts.
+    #[test]
+    fn test_get_storage_stats() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin    = Address::generate(&env);
+        let reporter = Address::generate(&env);
+        let subject1 = Address::generate(&env);
+        let subject2 = Address::generate(&env);
+
+        client.initialize(&admin);
+        client.add_reporter(&reporter);
+
+        let stats = client.get_storage_stats();
+        assert_eq!(stats.total_subjects, 0);
+        assert_eq!(stats.total_score_entries, 0);
+
+        let reason = String::from_str(&env, "activity");
+        client.submit_score(&reporter, &subject1, &10, &reason);
+        client.submit_score(&reporter, &subject1, &20, &reason);
+        client.submit_score(&reporter, &subject2, &30, &reason);
+
+        let stats = client.get_storage_stats();
+        assert_eq!(stats.total_subjects, 2);
+        assert_eq!(stats.total_score_entries, 3);
     }
 }
