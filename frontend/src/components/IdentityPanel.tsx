@@ -2,12 +2,9 @@ import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { WalletState } from '../hooks/useWallet';
 import type { ReputationRecord } from '../../../sdk/src/reputation';
-<<<<<<< fix/frontend-ux-issues
-import SkeletonCard from './SkeletonCard';
-=======
 import type { ScoreHistoryEntry } from '../../../sdk/src/reputation';
+import SkeletonCard from './SkeletonCard';
 import ReputationChart from './ReputationChart';
->>>>>>> main
 
 interface Props {
   wallet: WalletState & {
@@ -16,10 +13,23 @@ interface Props {
   };
 }
 
+type NetworkError = {
+  type: "network";
+  message: string;
+};
+
+type ContractError = {
+  type: "contract";
+  message: string;
+};
+
+type ErrorState = NetworkError | ContractError | null;
+
 export default function IdentityPanel({ wallet }: Props) {
   const [resolveAddress, setResolveAddress] = useState('');
   const [resolveResult, setResolveResult] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [networkError, setNetworkError] = useState<ErrorState>(null);
   const [reputation, setReputation] = useState<ReputationRecord | null>(null);
   const [reputationLoading, setReputationLoading] = useState(false);
   const [scoreHistory, setScoreHistory] = useState<ScoreHistoryEntry[]>([]);
@@ -42,6 +52,14 @@ export default function IdentityPanel({ wallet }: Props) {
   const [resolvedDoc, setResolvedDoc] = useState<object | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const isNetworkError = (error: unknown): boolean => {
+    if (error instanceof TypeError) {
+      return error.message.includes("fetch") || error.message.includes("network");
+    }
+    const msg = error instanceof Error ? error.message : String(error);
+    return msg.includes("ECONNREFUSED") || msg.includes("unreachable") || msg.includes("timeout");
+  };
+
   const handleResolve = async () => {
     if (!resolveAddress.trim()) return;
     setResolving(true);
@@ -49,6 +67,7 @@ export default function IdentityPanel({ wallet }: Props) {
     setReputation(null);
     setSybilResult(null);
     setScoreHistory([]);
+    setNetworkError(null);
     try {
       // TODO: wire IdentityClient.resolveDid() from SDK
       await new Promise((r) => setTimeout(r, 800));
@@ -85,14 +104,31 @@ export default function IdentityPanel({ wallet }: Props) {
           { reporter: resolveAddress, delta: 17, reason: "Referral", submittedAt: now - 3 * 86400 },
         ];
         setScoreHistory(mockHistory);
-      } catch {
+      } catch (repError: unknown) {
+        if (isNetworkError(repError)) {
+          setNetworkError({
+            type: "network",
+            message: "Unable to reach the Soroban network. Please try again later.",
+          });
+        }
         setReputation(null);
       } finally {
         setReputationLoading(false);
       }
       setResolvedAddress(resolveAddress.trim());
     } catch (e: unknown) {
-      setResolveResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
+      if (isNetworkError(e)) {
+        setNetworkError({
+          type: "network",
+          message: "Unable to reach the Soroban network. Please try again later.",
+        });
+      } else {
+        setNetworkError({
+          type: "contract",
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
+      setResolveResult(null);
       setResolvedAddress(null);
       setResolvedDoc(null);
     } finally {
@@ -208,6 +244,46 @@ export default function IdentityPanel({ wallet }: Props) {
     <>
       <div className="card">
         <h2>Resolve DID</h2>
+        {networkError && (
+          <div
+            role="alert"
+            style={{
+              background: networkError.type === "network" ? "var(--error-bg, #f8d7da)" : "var(--warning-bg, #fff3cd)",
+              color: networkError.type === "network" ? "var(--error-text, #721c24)" : "var(--warning-text, #856404)",
+              border: `1px solid ${networkError.type === "network" ? "var(--error-border, #f5c6cb)" : "var(--warning-border, #ffc107)"}`,
+              borderRadius: "0.5rem",
+              padding: "0.75rem 1rem",
+              marginBottom: "1rem",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "0.9rem",
+            }}
+          >
+            <span>
+              {networkError.type === "network" ? "🌐 " : "⚠ "}
+              {networkError.message}
+            </span>
+            <button
+              onClick={() => {
+                setNetworkError(null);
+                handleResolve();
+              }}
+              style={{
+                marginLeft: "1rem",
+                padding: "0.3rem 0.75rem",
+                fontSize: "0.85rem",
+                background: networkError.type === "network" ? "var(--error)" : "var(--warning)",
+                color: "white",
+                border: "none",
+                borderRadius: "0.25rem",
+                cursor: "pointer",
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
         <input
           placeholder="Stellar address (G…)"
           value={resolveAddress}
