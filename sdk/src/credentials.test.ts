@@ -311,4 +311,39 @@ describe("CredentialClient", () => {
 
     await expect(client.isIssuer("GABC", "GISSUER")).rejects.toThrow("Simulation failed: contract trap");
   });
+
+  it("getCredentialCount — returns count for a subject", async () => {
+    const server = (client as any).server;
+    server.simulateTransaction.mockResolvedValueOnce({ result: { retval: 3 } });
+
+    const count = await client.getCredentialCount("GABC", "GSUBJECT");
+
+    expect(count).toBe(3);
+  });
+
+  it("getCredentialCount — returns 0 when subject has no credentials", async () => {
+    const server = (client as any).server;
+    server.simulateTransaction.mockResolvedValueOnce({ result: { retval: 0 } });
+
+    const count = await client.getCredentialCount("GABC", "GSUBJECT");
+
+    expect(count).toBe(0);
+  });
+
+  it("getCredentialCount — throws InvalidAddress for invalid caller", async () => {
+    await expect(client.getCredentialCount("bad-address", "GSUBJECT")).rejects.toThrow("InvalidAddress");
+  });
+
+  it("getCredentialCount — throws InvalidAddress for invalid subject", async () => {
+    await expect(client.getCredentialCount("GABC", "bad-address")).rejects.toThrow("InvalidAddress");
+  });
+
+  it("getCredentialCount — throws on simulation error", async () => {
+    const { SorobanRpc } = await import("@stellar/stellar-sdk");
+    vi.mocked(SorobanRpc.Api.isSimulationError).mockReturnValueOnce(true);
+    const server = (client as any).server;
+    server.simulateTransaction.mockResolvedValueOnce({ error: "contract trap" });
+
+    await expect(client.getCredentialCount("GABC", "GSUBJECT")).rejects.toThrow("Simulation failed: contract trap");
+  });
 });

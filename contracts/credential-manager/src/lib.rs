@@ -11,6 +11,7 @@ const ADMIN: Symbol = symbol_short!("ADMIN");
 const ISSUER: Symbol = symbol_short!("ISSUER");
 const CRED: Symbol = symbol_short!("CRED");
 const IDSEQ: Symbol = symbol_short!("IDSEQ");
+const CRED_CNT: Symbol = symbol_short!("CREDCNT");
 
 const MAX_CREDENTIALS_PER_TYPE_PER_ISSUER: u32 = 5;
 
@@ -199,6 +200,11 @@ impl CredentialManager {
         let subject_key = Self::subject_key(&subject);
         env.storage().persistent().set(&subject_key, &subject_creds);
 
+        // Increment per-subject credential counter
+        let cnt_key = (CRED_CNT, subject.clone());
+        let cnt: u32 = env.storage().persistent().get(&cnt_key).unwrap_or(0);
+        env.storage().persistent().set(&cnt_key, &(cnt + 1));
+
         // Index credential under issuer+subject+type
         let mut type_creds = existing;
         type_creds.push_back(id.clone());
@@ -226,6 +232,14 @@ impl CredentialManager {
 
         cred.revoked = true;
         env.storage().persistent().set(&key, &cred);
+
+        // Decrement per-subject credential counter
+        let cnt_key = (CRED_CNT, cred.subject.clone());
+        let cnt: u32 = env.storage().persistent().get(&cnt_key).unwrap_or(0);
+        if cnt > 0 {
+            env.storage().persistent().set(&cnt_key, &(cnt - 1));
+        }
+
         env.events().publish((CRED, symbol_short!("revoked")), credential_id);
         Ok(())
     }
@@ -259,6 +273,12 @@ impl CredentialManager {
     /// List all credential IDs for a subject.
     pub fn get_subject_credentials(env: Env, subject: Address) -> Vec<BytesN<32>> {
         Self::fetch_subject_creds(&env, &subject)
+    }
+
+    /// Get the total number of credentials issued to a subject (decremented on revoke).
+    pub fn get_credential_count(env: Env, subject: Address) -> u32 {
+        let cnt_key = (CRED_CNT, subject);
+        env.storage().persistent().get(&cnt_key).unwrap_or(0)
     }
 
     /// Get the list of all registered issuers. No auth required — read-only.
@@ -584,4 +604,37 @@ mod tests {
         assert_eq!(issuers_after.len(), 1);
         assert!(!issuers_after.contains(&issuer1));
         assert!(issuers_after.contains(&issuer2));
+    }
+
+    /// get_credential_count returns 0 for a subject with no credentials.
+    #[test]
+    fn test_get_credential_count_zero() {
+        let (env, _admin, client) = setup();
+        let subject = Address::generate(&env);
+        assert_eq!(client.get_credential_count(&subject), 0);
+    }
+
+    /// get_credential_count increments on issue and decrements on revoke.
+    #[test]
+    fn test_get_credential_count_issue_and_revoke() {
+        let (env, _admin, client) = setup();
+
+        let issuer = Address::generate(&env);
+        let subject = Address::generate(&env);
+        client.add_issuer(&issuer);
+
+        let claims: Map<String, String> = Map::new(&env);
+        let sig = Bytes::from_array(&env, &[0u8; 64]);
+
+        let id1 = client.issue_credential(&issuer, &subject, &CredentialType::Kyc, &claims, &sig, &0u64);
+        assert_eq!(client.get_credential_count(&subject), 1);
+
+        let id2 = client.issue_credential(&issuer, &subject, &CredentialType::Achievement, &claims, &sig, &0u64);
+        assert_eq!(client.get_credential_count(&subject), 2);
+
+        client.revoke_credential(&issuer, &id1);
+        assert_eq!(client.get_credential_count(&subject), 1);
+
+        client.revoke_credential(&issuer, &id2);
+        assert_eq!(client.get_credential_count(&subject), 0);
     }

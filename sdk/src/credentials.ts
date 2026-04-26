@@ -283,6 +283,43 @@ export class CredentialClient {
   }
 
   /**
+   * Get the total number of credentials issued to a subject (decremented on revoke).
+   */
+  async getCredentialCount(
+    callerAddress: string,
+    subjectAddress: string,
+    options?: CallOptions
+  ): Promise<number> {
+    validateStellarAddress(callerAddress);
+    validateStellarAddress(subjectAddress);
+    const account = await this.server.getAccount(callerAddress);
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call(
+          "get_credential_count",
+          nativeToScVal(subjectAddress, { type: "address" })
+        )
+      )
+      .setTimeout(timeout)
+      .build();
+
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
+    if (SorobanRpc.Api.isSimulationError(result)) {
+      throw new Error(`Simulation failed: ${result.error}`);
+    }
+
+    return scValToNative(
+      (result as SorobanRpc.Api.SimulateTransactionSuccessResponse)
+        .result!.retval
+    ) as number;
+  }
+
+  /**
    * Get the list of all registered issuers. No auth required — read-only.
    */
   async getIssuers(callerAddress: string, options?: CallOptions): Promise<string[]> {
