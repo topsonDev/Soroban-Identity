@@ -69,6 +69,13 @@ const MOCK_CREDENTIALS = [
 
 const FILTER_OPTIONS: FilterType[] = ["All", "Kyc", "Reputation", "Achievement", "Custom"];
 
+const CREDENTIAL_TYPE_ICONS: Record<CredentialType, string> = {
+  Kyc: "🆔",
+  Reputation: "⭐",
+  Achievement: "🏆",
+  Custom: "📋",
+};
+
 function countByType(type: FilterType): number {
   if (type === "All") return MOCK_CREDENTIALS.length;
   return MOCK_CREDENTIALS.filter((c) => c.credentialType === type).length;
@@ -226,6 +233,9 @@ export default function CredentialsPanel({ wallet }: Props) {
                   gap: "1rem",
                 }}
               >
+                <span style={{ fontSize: "1.2rem", minWidth: "1.5rem" }}>
+                  {CREDENTIAL_TYPE_ICONS[cred.credentialType] || "📋"}
+                </span>
                 <span style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{cred.id}</span>
                 <span className="badge badge-green">{cred.credentialType}</span>
                 <span style={getExpiryStyle(cred.expiresAt)}>{formatExpiry(cred.expiresAt)}</span>

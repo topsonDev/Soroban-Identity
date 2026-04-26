@@ -264,7 +264,7 @@ impl Reputation {
     }
 
     /// Simple anti-sybil check: returns true if score >= threshold AND
-    /// at least `min_reporters` distinct reporters have contributed.
+    /// at least `min_reporters` distinct active reporters have contributed.
     pub fn passes_sybil_check(
         env: Env,
         subject: Address,
@@ -274,7 +274,21 @@ impl Reputation {
         let key = Self::record_key(&subject);
         match env.storage().persistent().get::<(Symbol, Address), ReputationRecord>(&key) {
             None => false,
-            Some(rec) => rec.score >= min_score && rec.reporter_count >= min_reporters,
+            Some(rec) => {
+                if rec.score < min_score {
+                    return false;
+                }
+                // Count active reporters that have contributed to this subject
+                let active_reporters = Self::get_reporters(&env);
+                let mut active_count = 0u32;
+                for reporter in active_reporters.iter() {
+                    let history_key = Self::history_key(&subject, &reporter);
+                    if env.storage().persistent().has(&history_key) {
+                        active_count += 1;
+                    }
+                }
+                active_count >= min_reporters
+            }
         }
     }
 
@@ -608,5 +622,42 @@ mod tests {
         // Unknown reporter should return error
         let result = client.try_get_history(&subject, &unknown, &0, &10);
         assert_eq!(result, Err(Ok(ContractError::ReporterNotFound)));
+    }
+
+    /// Removing a reporter should decrement reporter_count in passes_sybil_check.
+    #[test]
+    fn test_remove_reporter_updates_sybil_check() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin     = Address::generate(&env);
+        let reporter1 = Address::generate(&env);
+        let reporter2 = Address::generate(&env);
+        let reporter3 = Address::generate(&env);
+        let subject   = Address::generate(&env);
+
+        client.initialize(&admin);
+        client.add_reporter(&reporter1);
+        client.add_reporter(&reporter2);
+        client.add_reporter(&reporter3);
+
+        let reason = String::from_str(&env, "activity");
+        client.submit_score(&reporter1, &subject, &40, &reason);
+        client.submit_score(&reporter2, &subject, &40, &reason);
+        client.submit_score(&reporter3, &subject, &40, &reason);
+
+        // All 3 reporters active — should pass with min_reporters=3
+        assert!(client.passes_sybil_check(&subject, &50, &3));
+
+        // Remove reporter2
+        client.remove_reporter(&reporter2);
+
+        // Now only 2 active reporters — should fail with min_reporters=3
+        assert!(!client.passes_sybil_check(&subject, &50, &3));
+        // But should pass with min_reporters=2
+        assert!(client.passes_sybil_check(&subject, &50, &2));
     }
 }
