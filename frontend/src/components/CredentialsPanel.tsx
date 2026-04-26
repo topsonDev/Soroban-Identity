@@ -61,11 +61,11 @@ function getExpiryStyle(expiresAt: number): React.CSSProperties {
 
 // Mock credentials for demonstration — replace with SDK data when wired
 const MOCK_CREDENTIALS = [
-  { id: "abc001", credentialType: "Kyc" as CredentialType, subject: "GABC…", expiresAt: 0 },
-  { id: "abc002", credentialType: "Kyc" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 12 * 24 * 60 * 60 * 1000) / 1000) },
-  { id: "abc003", credentialType: "Reputation" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000) },
-  { id: "abc004", credentialType: "Achievement" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() - 5 * 24 * 60 * 60 * 1000) / 1000) },
-  { id: "abc005", credentialType: "Custom" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000) },
+  { id: "abc001", credentialType: "Kyc" as CredentialType, subject: "GABC…", expiresAt: 0, claims: { name: "John Doe", country: "US" } },
+  { id: "abc002", credentialType: "Kyc" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 12 * 24 * 60 * 60 * 1000) / 1000), claims: { verified: "true" } },
+  { id: "abc003", credentialType: "Reputation" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000), claims: { score: "850", level: "gold" } },
+  { id: "abc004", credentialType: "Achievement" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() - 5 * 24 * 60 * 60 * 1000) / 1000), claims: {} },
+  { id: "abc005", credentialType: "Custom" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000), claims: { custom_field: "custom_value" } },
 ];
 
 const FILTER_OPTIONS: FilterType[] = ["All", "Kyc", "Reputation", "Achievement", "Custom"];
@@ -86,6 +86,7 @@ export default function CredentialsPanel({ wallet }: Props) {
   const [credId, setCredId] = useState("");
   const [verifyState, setVerifyState] = useState<VerifyState>("idle");
   const [verifying, setVerifying] = useState(false);
+  const [expandedCredId, setExpandedCredId] = useState<string | null>(null);
 
   const [subject, setSubject] = useState("");
   const [claims, setClaims] = useState<Array<{ key: string; value: string }>>([{ key: "", value: "" }]);
@@ -280,21 +281,48 @@ export default function CredentialsPanel({ wallet }: Props) {
                 style={{
                   background: "var(--cred-item-bg)",
                   borderRadius: "0.5rem",
-                  padding: "0.6rem 1rem",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  fontSize: "0.85rem",
-                  color: "var(--text)",
-                  gap: "1rem",
+                  overflow: "hidden",
                 }}
               >
-                <span style={{ fontSize: "1.2rem", minWidth: "1.5rem" }}>
-                  {CREDENTIAL_TYPE_ICONS[cred.credentialType] || "📋"}
-                </span>
-                <span style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{cred.id}</span>
-                <span className="badge badge-green">{cred.credentialType}</span>
-                <span style={getExpiryStyle(cred.expiresAt)}>{formatExpiry(cred.expiresAt)}</span>
+                <div
+                  style={{
+                    padding: "0.6rem 1rem",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: "0.85rem",
+                    color: "var(--text)",
+                    gap: "1rem",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setExpandedCredId(expandedCredId === cred.id ? null : cred.id)}
+                >
+                  <span style={{ fontSize: "1.2rem", minWidth: "1.5rem" }}>
+                    {CREDENTIAL_TYPE_ICONS[cred.credentialType] || "📋"}
+                  </span>
+                  <span style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{cred.id}</span>
+                  <span className="badge badge-green">{cred.credentialType}</span>
+                  <span style={getExpiryStyle(cred.expiresAt)}>{formatExpiry(cred.expiresAt)}</span>
+                  <span style={{ marginLeft: "auto", fontSize: "1rem" }}>
+                    {expandedCredId === cred.id ? "▼" : "▶"}
+                  </span>
+                </div>
+                {expandedCredId === cred.id && (
+                  <div style={{ padding: "0.75rem 1rem", borderTop: "1px solid var(--border-input)", background: "var(--card-bg-accent)" }}>
+                    {Object.keys(cred.claims).length > 0 ? (
+                      <dl style={{ margin: 0, fontSize: "0.85rem" }}>
+                        {Object.entries(cred.claims).map(([key, value]) => (
+                          <div key={key} style={{ display: "flex", gap: "1rem", marginBottom: "0.5rem" }}>
+                            <dt style={{ fontWeight: 600, color: "var(--text-muted)", minWidth: "120px" }}>{key}</dt>
+                            <dd style={{ margin: 0, color: "var(--text)" }}>{value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    ) : (
+                      <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.8rem" }}>No claims</p>
+                    )}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
