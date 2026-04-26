@@ -7,7 +7,7 @@ import {
   nativeToScVal,
   scValToNative,
 } from "@stellar/stellar-sdk";
-import type { CallOptions, DidDocument, SorobanIdentityConfig, WriteResult } from "./types";
+import type { CallOptions, DidDocument, IdentityStorageStats, SorobanIdentityConfig, WriteResult } from "./types";
 import { retryWithBackoff, validateStellarAddress, pollTransactionStatus } from "./utils";
 
 export class IdentityClient {
@@ -259,5 +259,29 @@ export class IdentityClient {
     }
 
     await pollTransactionStatus(this.server, result.hash);
+  }
+
+  /** Get storage usage statistics for the identity registry. */
+  async getStorageStats(callerAddress: string, options?: CallOptions): Promise<IdentityStorageStats> {
+    validateStellarAddress(callerAddress);
+    const account = await this.server.getAccount(callerAddress);
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(this.contract.call("get_storage_stats"))
+      .setTimeout(timeout)
+      .build();
+
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
+    if (SorobanRpc.Api.isSimulationError(result)) {
+      throw new Error(`Simulation failed: ${result.error}`);
+    }
+
+    return scValToNative(
+      (result as SorobanRpc.Api.SimulateTransactionSuccessResponse).result!.retval
+    ) as IdentityStorageStats;
   }
 }

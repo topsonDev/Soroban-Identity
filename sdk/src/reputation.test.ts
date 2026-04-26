@@ -179,3 +179,64 @@ describe("ReputationClient.getScoreHistory", () => {
     ).rejects.toThrow("InvalidAddress");
   });
 });
+
+describe("ReputationClient.getReputation", () => {
+  let client: ReputationClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    client = new ReputationClient(config);
+  });
+
+  it("returns decoded ReputationRecord on success", async () => {
+    const { scValToNative } = await import("@stellar/stellar-sdk");
+    const mockRecord = { subject: "GSUBJECT", score: 75, reporterCount: 2, updatedAt: 1700000000 };
+    (scValToNative as ReturnType<typeof vi.fn>).mockReturnValue(mockRecord);
+    mockSimulateTransaction.mockResolvedValue({ result: { retval: {} } });
+
+    const result = await client.getReputation("GCALLER", "GSUBJECT");
+    expect(result).toEqual(mockRecord);
+  });
+
+  it("returns default zero record when simulation error indicates no record found", async () => {
+    mockSimulateTransaction.mockResolvedValue({ error: "KeyNotFound" });
+
+    const result = await client.getReputation("GCALLER", "GFRESH_ADDRESS");
+    expect(result).toEqual({ subject: "GFRESH_ADDRESS", score: 0, reporterCount: 0, updatedAt: 0 });
+  });
+
+  it("still throws for genuine network errors", async () => {
+    mockSimulateTransaction.mockResolvedValue({ error: "connection timeout" });
+
+    await expect(
+      client.getReputation("GCALLER", "GSUBJECT")
+    ).rejects.toThrow("Simulation failed: connection timeout");
+  });
+});
+
+describe("ReputationClient.getStorageStats", () => {
+  let client: ReputationClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    client = new ReputationClient(config);
+  });
+
+  it("returns decoded stats on success", async () => {
+    const { scValToNative } = await import("@stellar/stellar-sdk");
+    const mockStats = { totalSubjects: 10, totalScoreEntries: 42 };
+    (scValToNative as ReturnType<typeof vi.fn>).mockReturnValue(mockStats);
+    mockSimulateTransaction.mockResolvedValue({ result: { retval: {} } });
+
+    const result = await client.getStorageStats("GCALLER");
+    expect(result).toEqual(mockStats);
+  });
+
+  it("throws when simulation fails", async () => {
+    mockSimulateTransaction.mockResolvedValue({ error: "contract trap" });
+
+    await expect(client.getStorageStats("GCALLER")).rejects.toThrow(
+      "Simulation failed: contract trap"
+    );
+  });
+});

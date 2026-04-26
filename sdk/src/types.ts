@@ -50,3 +50,19 @@ export interface WriteResult {
   /** Estimated fee in XLM (human-readable). */
   estimatedFeeXlm: string;
 }
+
+export interface IdentityStorageStats {
+  totalDids: number;
+  activeDids: number;
+}
+
+export interface CredentialStorageStats {
+  totalCredentials: number;
+  revokedCredentials: number;
+  activeCredentials: number;
+}
+
+export interface ReputationStorageStats {
+  totalSubjects: number;
+  totalScoreEntries: number;
+}

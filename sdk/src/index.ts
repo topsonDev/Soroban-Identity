@@ -10,6 +10,9 @@ export type {
   VerifyResult,
   VerifyFailReason,
   CallOptions,
+  IdentityStorageStats,
+  CredentialStorageStats,
+  ReputationStorageStats,
 } from "./types";
 export type { ReputationRecord, ScoreHistoryEntry } from "./reputation";
 export type { EventFilter, ContractEvent } from "./events";
