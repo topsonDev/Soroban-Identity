@@ -20,6 +20,7 @@ pub enum ContractError {
 
 const IDENTITY: Symbol = symbol_short!("IDENTITY");
 const ADMIN: Symbol = symbol_short!("ADMIN");
+const DID_COUNT: Symbol = symbol_short!("DIDCNT");
 
 /// ~1 year in ledgers (5-second ledger close time).
 /// Used as the TTL extension on every persistent read/write.
@@ -116,6 +117,11 @@ impl IdentityRegistry {
 
         storage.set(&key, &doc);
         storage.extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
+        
+        // Increment DID count
+        let count: u32 = env.storage().instance().get(&DID_COUNT).unwrap_or(0);
+        env.storage().instance().set(&DID_COUNT, &(count + 1));
+        
         env.events().publish((IDENTITY, symbol_short!("created")), controller);
 
         Ok(did_id)
@@ -153,6 +159,13 @@ impl IdentityRegistry {
 
         storage.set(&key, &doc);
         storage.extend_ttl(&key, TTL_LEDGERS, TTL_LEDGERS);
+        
+        // Decrement DID count
+        let count: u32 = env.storage().instance().get(&DID_COUNT).unwrap_or(0);
+        if count > 0 {
+            env.storage().instance().set(&DID_COUNT, &(count - 1));
+        }
+        
         env.events().publish((IDENTITY, symbol_short!("deactivated")), controller);
     }
 
@@ -176,6 +189,11 @@ impl IdentityRegistry {
             Some(doc) => doc.active,
             None => false,
         }
+    }
+
+    /// Get the total count of active DIDs.
+    pub fn get_did_count(env: Env) -> u32 {
+        env.storage().instance().get(&DID_COUNT).unwrap_or(0)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -309,6 +327,32 @@ mod tests {
         let user = Address::generate(&env);
         let result = client.try_resolve_did(&user);
         assert_eq!(result, Err(Ok(ContractError::DidNotFound)));
+    }
+
+    /// get_did_count must return 0 initially and increment on create_did.
+    #[test]
+    fn test_get_did_count() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, IdentityRegistry);
+        let client = IdentityRegistryClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        assert_eq!(client.get_did_count(), 0);
+
+        let user1 = Address::generate(&env);
+        client.create_did(&user1, &Map::new(&env));
+        assert_eq!(client.get_did_count(), 1);
+
+        let user2 = Address::generate(&env);
+        client.create_did(&user2, &Map::new(&env));
+        assert_eq!(client.get_did_count(), 2);
+
+        client.deactivate_did(&user1);
+        assert_eq!(client.get_did_count(), 1);
     }
 
     /// create_did must return MetadataTooLong when a key exceeds 64 chars.

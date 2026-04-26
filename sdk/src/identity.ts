@@ -196,6 +196,34 @@ export class IdentityClient {
   }
 
   /**
+   * Get the total count of active DIDs.
+   */
+  async getDidCount(options?: CallOptions): Promise<number> {
+    const account = await this.server.getAccount(this.config.identityRegistryId);
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call("get_did_count")
+      )
+      .setTimeout(timeout)
+      .build();
+
+    const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
+    if (SorobanRpc.Api.isSimulationError(result)) {
+      throw new Error("Failed to get DID count");
+    }
+
+    return scValToNative(
+      (result as SorobanRpc.Api.SimulateTransactionSuccessResponse)
+        .result!.retval
+    ) as number;
+  }
+
+  /**
    * Deactivate the DID associated with the given keypair.
    * Throws if the DID is not found or is already inactive.
    */

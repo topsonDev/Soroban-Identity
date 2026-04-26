@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { WalletState } from '../hooks/useWallet';
-import type { ReputationRecord, ScoreHistoryEntry } from '../../../sdk/src/reputation';
-import { useAddressHistory } from '../hooks/useAddressHistory';
+import type { ReputationRecord } from '../../../sdk/src/reputation';
+import type { ScoreHistoryEntry } from '../../../sdk/src/reputation';
 import SkeletonCard from './SkeletonCard';
 import ReputationChart from './ReputationChart';
 
@@ -13,12 +13,25 @@ interface Props {
   };
 }
 
+type NetworkError = {
+  type: "network";
+  message: string;
+};
+
+type ContractError = {
+  type: "contract";
+  message: string;
+};
+
+type ErrorState = NetworkError | ContractError | null;
+
 export default function IdentityPanel({ wallet }: Props) {
   const [resolveAddress, setResolveAddress] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const { history, addAddress, clearHistory } = useAddressHistory();
   const [resolveResult, setResolveResult] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [networkError, setNetworkError] = useState<ErrorState>(null);
   const [reputation, setReputation] = useState<ReputationRecord | null>(null);
   const [reputationLoading, setReputationLoading] = useState(false);
   const [scoreHistory, setScoreHistory] = useState<ScoreHistoryEntry[]>([]);
@@ -41,6 +54,14 @@ export default function IdentityPanel({ wallet }: Props) {
   const [resolvedDoc, setResolvedDoc] = useState<object | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const isNetworkError = (error: unknown): boolean => {
+    if (error instanceof TypeError) {
+      return error.message.includes("fetch") || error.message.includes("network");
+    }
+    const msg = error instanceof Error ? error.message : String(error);
+    return msg.includes("ECONNREFUSED") || msg.includes("unreachable") || msg.includes("timeout");
+  };
+
   const handleResolve = async () => {
     if (!resolveAddress.trim()) return;
     addAddress(resolveAddress);
@@ -49,6 +70,7 @@ export default function IdentityPanel({ wallet }: Props) {
     setReputation(null);
     setSybilResult(null);
     setScoreHistory([]);
+    setNetworkError(null);
     try {
       // TODO: wire IdentityClient.resolveDid() from SDK
       await new Promise((r) => setTimeout(r, 800));
@@ -85,14 +107,31 @@ export default function IdentityPanel({ wallet }: Props) {
           { reporter: resolveAddress, delta: 17, reason: "Referral", submittedAt: now - 3 * 86400 },
         ];
         setScoreHistory(mockHistory);
-      } catch {
+      } catch (repError: unknown) {
+        if (isNetworkError(repError)) {
+          setNetworkError({
+            type: "network",
+            message: "Unable to reach the Soroban network. Please try again later.",
+          });
+        }
         setReputation(null);
       } finally {
         setReputationLoading(false);
       }
       setResolvedAddress(resolveAddress.trim());
     } catch (e: unknown) {
-      setResolveResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
+      if (isNetworkError(e)) {
+        setNetworkError({
+          type: "network",
+          message: "Unable to reach the Soroban network. Please try again later.",
+        });
+      } else {
+        setNetworkError({
+          type: "contract",
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
+      setResolveResult(null);
       setResolvedAddress(null);
       setResolvedDoc(null);
     } finally {
@@ -208,75 +247,51 @@ export default function IdentityPanel({ wallet }: Props) {
     <>
       <div className="card">
         <h2>Resolve DID</h2>
-        <div style={{ position: 'relative', marginBottom: '0.5rem' }}>
-          <input
-            placeholder="Stellar address (G…)"
-            value={resolveAddress}
-            onChange={(e) => setResolveAddress(e.target.value)}
-            onFocus={() => setShowHistory(true)}
-          />
-          {showHistory && history.length > 0 && (
-            <div
-              style={{
-                position: 'absolute',
-                top: '100%',
-                left: 0,
-                right: 0,
-                background: 'var(--card-bg)',
-                border: '1px solid var(--border-input)',
-                borderTop: 'none',
-                borderRadius: '0 0 0.5rem 0.5rem',
-                zIndex: 10,
-                maxHeight: '200px',
-                overflowY: 'auto',
-              }}
-            >
-              {history.map((addr, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    setResolveAddress(addr);
-                    setShowHistory(false);
-                  }}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '0.5rem 1rem',
-                    textAlign: 'left',
-                    background: 'transparent',
-                    border: 'none',
-                    borderBottom: idx < history.length - 1 ? '1px solid var(--border-input)' : 'none',
-                    cursor: 'pointer',
-                    color: 'var(--text)',
-                    fontSize: '0.85rem',
-                    fontFamily: 'monospace',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--card-bg-accent)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                >
-                  {addr}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        {history.length > 0 && (
-          <button
-            onClick={clearHistory}
+        {networkError && (
+          <div
+            role="alert"
             style={{
-              padding: '0.3rem 0.6rem',
-              fontSize: '0.75rem',
-              background: 'var(--error)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '0.25rem',
-              cursor: 'pointer',
-              marginBottom: '0.5rem',
+              background: networkError.type === "network" ? "var(--error-bg, #f8d7da)" : "var(--warning-bg, #fff3cd)",
+              color: networkError.type === "network" ? "var(--error-text, #721c24)" : "var(--warning-text, #856404)",
+              border: `1px solid ${networkError.type === "network" ? "var(--error-border, #f5c6cb)" : "var(--warning-border, #ffc107)"}`,
+              borderRadius: "0.5rem",
+              padding: "0.75rem 1rem",
+              marginBottom: "1rem",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "0.9rem",
             }}
           >
-            Clear History
-          </button>
+            <span>
+              {networkError.type === "network" ? "🌐 " : "⚠ "}
+              {networkError.message}
+            </span>
+            <button
+              onClick={() => {
+                setNetworkError(null);
+                handleResolve();
+              }}
+              style={{
+                marginLeft: "1rem",
+                padding: "0.3rem 0.75rem",
+                fontSize: "0.85rem",
+                background: networkError.type === "network" ? "var(--error)" : "var(--warning)",
+                color: "white",
+                border: "none",
+                borderRadius: "0.25rem",
+                cursor: "pointer",
+              }}
+            >
+              Retry
+            </button>
+          </div>
         )}
+        <input
+          placeholder="Stellar address (G…)"
+          value={resolveAddress}
+          onChange={(e) => setResolveAddress(e.target.value)}
+        />
         <button onClick={handleResolve} disabled={resolving || !resolveAddress}>
           {resolving ? 'Resolving…' : 'Resolve'}
         </button>
