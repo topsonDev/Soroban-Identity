@@ -24,6 +24,8 @@ const MAX_ISSUERS: u32 = 100;
 pub enum ContractError {
     AlreadyInitialized       = 1,
     UnauthorizedIssuer       = 2,
+    CredentialNotFound       = 3,
+    CredentialRevoked        = 4,
 }
 
 #[contracttype]
@@ -261,13 +263,15 @@ impl CredentialManager {
         }
     }
 
-    /// Get a credential by ID.
-    pub fn get_credential(env: Env, credential_id: BytesN<32>) -> Credential {
+    /// Get a credential by ID. Returns CredentialNotFound if it never existed,
+    /// or CredentialRevoked if it was issued but later revoked.
+    pub fn get_credential(env: Env, credential_id: BytesN<32>) -> Result<Credential, ContractError> {
         let key = Self::cred_key(&credential_id);
-        env.storage()
-            .persistent()
-            .get(&key)
-            .expect("credential not found")
+        match env.storage().persistent().get::<(Symbol, BytesN<32>), Credential>(&key) {
+            None => Err(ContractError::CredentialNotFound),
+            Some(cred) if cred.revoked => Err(ContractError::CredentialRevoked),
+            Some(cred) => Ok(cred),
+        }
     }
 
     /// List all credential IDs for a subject.
@@ -519,7 +523,7 @@ mod tests {
             &issuer, &subject, &CredentialType::Achievement, &claims, &sig, &expires_at,
         );
 
-        let cred = client.get_credential(&cred_id);
+        let cred = client.get_credential(&cred_id).unwrap();
         assert_eq!(cred.issuer, issuer);
         assert_eq!(cred.subject, subject);
         assert_eq!(cred.credential_type, CredentialType::Achievement);
@@ -606,7 +610,33 @@ mod tests {
         assert!(issuers_after.contains(&issuer2));
     }
 
-    /// get_credential_count returns 0 for a subject with no credentials.
+    /// get_credential returns CredentialNotFound for an unknown ID.
+    #[test]
+    fn test_get_credential_not_found() {
+        let (env, _admin, client) = setup();
+        let fake_id = BytesN::from_array(&env, &[0u8; 32]);
+        let result = client.try_get_credential(&fake_id);
+        assert_eq!(result, Err(Ok(ContractError::CredentialNotFound)));
+    }
+
+    /// get_credential returns CredentialRevoked for a revoked credential.
+    #[test]
+    fn test_get_credential_revoked() {
+        let (env, _admin, client) = setup();
+
+        let issuer = Address::generate(&env);
+        let subject = Address::generate(&env);
+        client.add_issuer(&issuer);
+
+        let claims: Map<String, String> = Map::new(&env);
+        let sig = Bytes::from_array(&env, &[0u8; 64]);
+        let cred_id = client.issue_credential(&issuer, &subject, &CredentialType::Kyc, &claims, &sig, &0u64);
+
+        client.revoke_credential(&issuer, &cred_id);
+
+        let result = client.try_get_credential(&cred_id);
+        assert_eq!(result, Err(Ok(ContractError::CredentialRevoked)));
+    }
     #[test]
     fn test_get_credential_count_zero() {
         let (env, _admin, client) = setup();

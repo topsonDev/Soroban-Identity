@@ -195,6 +195,8 @@ export class CredentialClient {
 
   /**
    * Get a credential by ID.
+   * Throws "CredentialNotFound" if the ID was never issued.
+   * Throws "CredentialRevoked" if the credential was issued but later revoked.
    */
   async getCredential(
     callerAddress: string,
@@ -221,7 +223,14 @@ export class CredentialClient {
 
     const result = await retryWithBackoff(() => this.server.simulateTransaction(tx));
     if (SorobanRpc.Api.isSimulationError(result)) {
-      throw new Error(`Simulation failed: ${result.error}`);
+      const error: string = (result as { error: string }).error ?? "";
+      if (error.includes("CredentialNotFound") || error.includes("#3")) {
+        throw new Error("CredentialNotFound: credential does not exist");
+      }
+      if (error.includes("CredentialRevoked") || error.includes("#4")) {
+        throw new Error("CredentialRevoked: credential has been revoked");
+      }
+      throw new Error(`Simulation failed: ${error}`);
     }
 
     return scValToNative(
