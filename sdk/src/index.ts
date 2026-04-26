@@ -1,6 +1,7 @@
 export { IdentityClient } from "./identity";
 export { CredentialClient } from "./credentials";
 export { ReputationClient } from "./reputation";
+export { SorobanEventListener } from "./events";
 export { retryWithBackoff, validateStellarAddress } from "./utils";
 export type {
   DidDocument,
@@ -11,6 +12,7 @@ export type {
   CallOptions,
 } from "./types";
 export type { ReputationRecord, ScoreHistoryEntry } from "./reputation";
+export type { EventFilter, ContractEvent } from "./events";
 import type { SorobanIdentityConfig } from "./types";
 export type { SorobanIdentityConfig };
 
