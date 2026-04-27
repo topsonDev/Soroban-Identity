@@ -1,8 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, contracterror, symbol_short,
-    Address, Bytes, BytesN, Env, Map, String, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env,
+    Map, String, Symbol, Vec,
 };
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
@@ -20,11 +20,11 @@ const MAX_ISSUERS: u32 = 100;
 #[contracterror]
 #[derive(Clone, Debug, PartialEq, Copy)]
 pub enum ContractError {
-    AlreadyInitialized       = 1,
-    UnauthorizedIssuer       = 2,
-    CredentialNotFound       = 3,
-    CredentialRevoked        = 4,
-    CredentialAlreadyExists  = 5,
+    AlreadyInitialized = 1,
+    UnauthorizedIssuer = 2,
+    CredentialNotFound = 3,
+    CredentialRevoked = 4,
+    CredentialAlreadyExists = 5,
 }
 
 /// ~1 year in ledgers (5-second ledger close time). Used as the max TTL cap.
@@ -99,7 +99,11 @@ impl CredentialManager {
     /// Transfer admin rights to a new address. Only the current admin can call this.
     pub fn transfer_admin(env: Env, current_admin: Address, new_admin: Address) {
         current_admin.require_auth();
-        let stored: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&ADMIN)
+            .expect("not initialized");
         if stored != current_admin {
             panic!("not the admin");
         }
@@ -113,7 +117,11 @@ impl CredentialManager {
     /// Upgrade the contract WASM. Only the admin can call this.
     pub fn upgrade(env: Env, admin: Address, new_wasm_hash: Bytes) {
         admin.require_auth();
-        let stored: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&ADMIN)
+            .expect("not initialized");
         if stored != admin {
             panic!("not the admin");
         }
@@ -130,7 +138,8 @@ impl CredentialManager {
             }
             issuers.push_back(issuer.clone());
             env.storage().instance().set(&ISSUER, &issuers);
-            env.events().publish((ISSUER, symbol_short!("added")), issuer);
+            env.events()
+                .publish((ISSUER, symbol_short!("added")), issuer);
         }
     }
 
@@ -205,8 +214,12 @@ impl CredentialManager {
         subject_creds.push_back(id.clone());
         let subject_key = Self::subject_key(&env, &subject);
         env.storage().persistent().set(&subject_key, &subject_creds);
-        env.storage().persistent().extend_ttl(&subject_key, TTL_MAX, TTL_MAX);
-        env.storage().persistent().set(&Self::subject_key(&subject), &subject_creds);
+        env.storage()
+            .persistent()
+            .extend_ttl(&subject_key, TTL_MAX, TTL_MAX);
+        env.storage()
+            .persistent()
+            .set(&Self::subject_key(&subject), &subject_creds);
 
         // Increment per-subject credential counter
         let cnt_key = (CRED_CNT, subject.clone());
@@ -222,7 +235,11 @@ impl CredentialManager {
     }
 
     /// Revoke a credential. Only the original issuer can revoke.
-    pub fn revoke_credential(env: Env, issuer: Address, credential_id: BytesN<32>) -> Result<(), ContractError> {
+    pub fn revoke_credential(
+        env: Env,
+        issuer: Address,
+        credential_id: BytesN<32>,
+    ) -> Result<(), ContractError> {
         issuer.require_auth();
 
         let key = Self::cred_key(&credential_id);
@@ -239,15 +256,14 @@ impl CredentialManager {
         cred.revoked = true;
         env.storage().persistent().set(&key, &cred);
         // Do NOT extend TTL for revoked credentials — let them expire naturally
-        env.events().publish((CRED, symbol_short!("revoked")), credential_id);
+        env.events()
+            .publish((CRED, symbol_short!("revoked")), credential_id);
 
         let revoked: u32 = env.storage().instance().get(&REVOKED_CNT).unwrap_or(0);
         env.storage().instance().set(&REVOKED_CNT, &(revoked + 1));
 
-        env.events().publish(
-            (CRED, symbol_short!("revoked")),
-            (credential_id, issuer),
-        );
+        env.events()
+            .publish((CRED, symbol_short!("revoked")), (credential_id, issuer));
         Ok(())
     }
 
@@ -273,36 +289,28 @@ impl CredentialManager {
     }
 
     /// Get a credential by ID.
-    pub fn get_credential(env: Env, credential_id: BytesN<32>) -> Credential {
-        let key = Self::cred_key(&env, &credential_id);
-        let cred: Credential = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .expect("credential not found");
-        // Bump TTL on read only for active credentials
-        if !cred.revoked {
-            let ttl = Self::ttl_for_credential(&env, cred.expires_at);
-            env.storage().persistent().extend_ttl(&key, ttl, ttl);
+    pub fn get_credential(
+        env: Env,
+        credential_id: BytesN<32>,
+    ) -> Result<Credential, ContractError> {
+        let key = Self::cred_key(&credential_id);
+        match env.storage().persistent().get::<_, Credential>(&key) {
+            None => Err(ContractError::CredentialNotFound),
+            Some(mut cred) if cred.revoked => Err(ContractError::CredentialRevoked),
+            Some(mut cred) => {
+                let ttl = Self::ttl_for_credential(&env, cred.expires_at);
+                env.storage().persistent().extend_ttl(&key, ttl, ttl);
+                Ok(cred)
+            }
         }
-        cred
+    }
+
     /// Verify that the supplied hash matches the stored claims_hash for a credential.
     pub fn verify_claims_hash(env: Env, credential_id: BytesN<32>, hash: BytesN<32>) -> bool {
         let key = Self::cred_key(&credential_id);
         match env.storage().persistent().get::<_, Credential>(&key) {
             None => false,
             Some(cred) => cred.claims_hash == hash,
-        }
-    }
-
-    /// Get a credential by ID. Returns CredentialNotFound if it never existed,
-    /// or CredentialRevoked if it was issued but later revoked.
-    pub fn get_credential(env: Env, credential_id: BytesN<32>) -> Result<Credential, ContractError> {
-        let key = Self::cred_key(&credential_id);
-        match env.storage().persistent().get::<_, Credential>(&key) {
-            None => Err(ContractError::CredentialNotFound),
-            Some(cred) if cred.revoked => Err(ContractError::CredentialRevoked),
-            Some(cred) => Ok(cred),
         }
     }
 
@@ -337,7 +345,11 @@ impl CredentialManager {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     fn require_admin(env: &Env) {
-        let admin: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&ADMIN)
+            .expect("not initialized");
         admin.require_auth();
     }
 
@@ -365,16 +377,33 @@ impl CredentialManager {
 
     /// Derive a deterministic 32-byte credential ID from issuer + subject + credential_type.
     /// Uses the Soroban-native sha256 over the XDR-serialised addresses and a type tag byte.
-    fn derive_id(env: &Env, issuer: &Address, subject: &Address, credential_type: &CredentialType) -> BytesN<32> {
+    fn derive_id(
+        env: &Env,
+        issuer: &Address,
+        subject: &Address,
+        credential_type: &CredentialType,
+    ) -> BytesN<32> {
         let type_tag: u8 = match credential_type {
-            CredentialType::Kyc         => 0,
-            CredentialType::Reputation  => 1,
+            CredentialType::Kyc => 0,
+            CredentialType::Reputation => 1,
             CredentialType::Achievement => 2,
-            CredentialType::Custom      => 3,
+            CredentialType::Custom => 3,
         };
         let mut data = Bytes::new(env);
-        data.extend_from_array(&issuer.clone().to_xdr(env).to_array::<64>().unwrap_or([0u8; 64]));
-        data.extend_from_array(&subject.clone().to_xdr(env).to_array::<64>().unwrap_or([0u8; 64]));
+        data.extend_from_array(
+            &issuer
+                .clone()
+                .to_xdr(env)
+                .to_array::<64>()
+                .unwrap_or([0u8; 64]),
+        );
+        data.extend_from_array(
+            &subject
+                .clone()
+                .to_xdr(env)
+                .to_array::<64>()
+                .unwrap_or([0u8; 64]),
+        );
         data.push_back(type_tag);
         env.crypto().sha256(&data).into()
     }
@@ -410,7 +439,10 @@ impl CredentialManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::{Address as _, Ledger as _}, Bytes, Env, Map};
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger as _},
+        Bytes, Env, Map,
+    };
 
     fn setup() -> (Env, Address, CredentialManagerClient<'static>) {
         let env = Env::default();
@@ -422,10 +454,23 @@ mod tests {
         (env, admin, client)
     }
 
-    fn issue_kyc(env: &Env, client: &CredentialManagerClient, issuer: &Address, subject: &Address) -> BytesN<32> {
+    fn issue_kyc(
+        env: &Env,
+        client: &CredentialManagerClient,
+        issuer: &Address,
+        subject: &Address,
+    ) -> BytesN<32> {
         let claims_hash = BytesN::from_array(env, &[1u8; 32]);
         let sig = Bytes::from_array(env, &[0u8; 64]);
-        client.issue_credential(issuer, subject, &CredentialType::Kyc, &Map::new(env), &claims_hash, &sig, &0u64)
+        client.issue_credential(
+            issuer,
+            subject,
+            &CredentialType::Kyc,
+            &Map::new(env),
+            &claims_hash,
+            &sig,
+            &0u64,
+        )
     }
 
     #[test]
@@ -462,8 +507,13 @@ mod tests {
         let past_expiry = env.ledger().timestamp().saturating_sub(1);
         let sig = Bytes::from_array(&env, &[0u8; 64]);
         client.issue_credential(
-            &issuer, &subject, &CredentialType::Kyc,
-            &Map::new(&env), &BytesN::from_array(&env, &[0u8; 32]), &sig, &past_expiry,
+            &issuer,
+            &subject,
+            &CredentialType::Kyc,
+            &Map::new(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
+            &sig,
+            &past_expiry,
         );
     }
 
@@ -475,8 +525,13 @@ mod tests {
         let subject = Address::generate(&env);
         let sig = Bytes::from_array(&env, &[0u8; 64]);
         client.issue_credential(
-            &unauthorized, &subject, &CredentialType::Kyc,
-            &Map::new(&env), &BytesN::from_array(&env, &[0u8; 32]), &sig, &0u64,
+            &unauthorized,
+            &subject,
+            &CredentialType::Kyc,
+            &Map::new(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
+            &sig,
+            &0u64,
         );
     }
 
@@ -490,12 +545,19 @@ mod tests {
         let expires_at = env.ledger().timestamp() + 100;
         let sig = Bytes::from_array(&env, &[0u8; 64]);
         let cred_id = client.issue_credential(
-            &issuer, &subject, &CredentialType::Kyc,
-            &Map::new(&env), &BytesN::from_array(&env, &[0u8; 32]), &sig, &expires_at,
+            &issuer,
+            &subject,
+            &CredentialType::Kyc,
+            &Map::new(&env),
+            &BytesN::from_array(&env, &[0u8; 32]),
+            &sig,
+            &expires_at,
         );
 
         assert!(client.verify_credential(&cred_id));
-        env.ledger().with_mut(|li| { li.timestamp = expires_at + 1; });
+        env.ledger().with_mut(|li| {
+            li.timestamp = expires_at + 1;
+        });
         assert!(!client.verify_credential(&cred_id));
     }
 
@@ -528,14 +590,22 @@ mod tests {
         client.add_issuer(&issuer);
 
         let mut claims: Map<String, String> = Map::new(&env);
-        claims.set(String::from_str(&env, "name"), String::from_str(&env, "Alice"));
+        claims.set(
+            String::from_str(&env, "name"),
+            String::from_str(&env, "Alice"),
+        );
         let claims_hash = BytesN::from_array(&env, &[42u8; 32]);
         let sig = Bytes::from_array(&env, &[1u8; 64]);
         let expires_at = 9999u64;
 
         let cred_id = client.issue_credential(
-            &issuer, &subject, &CredentialType::Achievement,
-            &claims, &claims_hash, &sig, &expires_at,
+            &issuer,
+            &subject,
+            &CredentialType::Achievement,
+            &claims,
+            &claims_hash,
+            &sig,
+            &expires_at,
         );
 
         let cred = client.get_credential(&cred_id);
@@ -616,12 +686,17 @@ mod tests {
         client.add_issuer(&issuer);
 
         let correct_hash = BytesN::from_array(&env, &[7u8; 32]);
-        let wrong_hash   = BytesN::from_array(&env, &[8u8; 32]);
+        let wrong_hash = BytesN::from_array(&env, &[8u8; 32]);
         let sig = Bytes::from_array(&env, &[0u8; 64]);
 
         let cred_id = client.issue_credential(
-            &issuer, &subject, &CredentialType::Kyc,
-            &Map::new(&env), &correct_hash, &sig, &0u64,
+            &issuer,
+            &subject,
+            &CredentialType::Kyc,
+            &Map::new(&env),
+            &correct_hash,
+            &sig,
+            &0u64,
         );
 
         assert!(client.verify_claims_hash(&cred_id, &correct_hash));
@@ -642,9 +717,13 @@ mod tests {
 
         // Second issuance must fail with CredentialAlreadyExists
         let result = client.try_issue_credential(
-            &issuer, &subject, &CredentialType::Kyc,
-            &Map::new(&env), &BytesN::from_array(&env, &[1u8; 32]),
-            &Bytes::from_array(&env, &[0u8; 64]), &0u64,
+            &issuer,
+            &subject,
+            &CredentialType::Kyc,
+            &Map::new(&env),
+            &BytesN::from_array(&env, &[1u8; 32]),
+            &Bytes::from_array(&env, &[0u8; 64]),
+            &0u64,
         );
         assert_eq!(result, Err(Ok(ContractError::CredentialAlreadyExists)));
     }
@@ -678,7 +757,12 @@ mod tests {
 
         // Issue with no expiry — should use TTL_MAX
         let cred_id = client.issue_credential(
-            &issuer, &subject, &CredentialType::Kyc, &claims, &sig, &0u64,
+            &issuer,
+            &subject,
+            &CredentialType::Kyc,
+            &claims,
+            &sig,
+            &0u64,
         );
 
         // Credential should still be verifiable (TTL was set)
@@ -696,7 +780,12 @@ mod tests {
         let claims: Map<String, String> = Map::new(&env);
         let sig = Bytes::from_array(&env, &[0u8; 64]);
         let cred_id = client.issue_credential(
-            &issuer, &subject, &CredentialType::Kyc, &claims, &sig, &0u64,
+            &issuer,
+            &subject,
+            &CredentialType::Kyc,
+            &claims,
+            &sig,
+            &0u64,
         );
 
         // Two consecutive verifies — both should succeed (TTL bumped on first)
@@ -715,7 +804,12 @@ mod tests {
         let claims: Map<String, String> = Map::new(&env);
         let sig = Bytes::from_array(&env, &[0u8; 64]);
         let cred_id = client.issue_credential(
-            &issuer, &subject, &CredentialType::Kyc, &claims, &sig, &0u64,
+            &issuer,
+            &subject,
+            &CredentialType::Kyc,
+            &claims,
+            &sig,
+            &0u64,
         );
 
         client.revoke_credential(&issuer, &cred_id);
@@ -727,3 +821,4 @@ mod tests {
         let cred = client.get_credential(&cred_id);
         assert!(cred.revoked);
     }
+}

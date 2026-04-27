@@ -7,13 +7,13 @@
 //! so scores can be audited or disputed.
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, contracterror, symbol_short,
-    Address, Bytes, Env, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, Env, Symbol,
+    Vec,
 };
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
 
-const ADMIN: Symbol    = symbol_short!("ADMIN");
+const ADMIN: Symbol = symbol_short!("ADMIN");
 const REPORTER: Symbol = symbol_short!("REPORTER");
 const DEF_THRESH: Symbol = symbol_short!("DEFTHRESH");
 const SUBJECT_CNT: Symbol = symbol_short!("SUBCNT");
@@ -25,9 +25,9 @@ const SCORE_CNT: Symbol = symbol_short!("SCRCNT");
 #[derive(Clone, Debug, PartialEq, Copy)]
 pub enum ContractError {
     AlreadyInitialized = 1,
-    ReporterNotFound   = 2,
-    RateLimitExceeded  = 3,
-    ReasonTooLong      = 4,
+    ReporterNotFound = 2,
+    RateLimitExceeded = 3,
+    ReasonTooLong = 4,
     ReporterNotFound = 2,
     ReasonTooLong = 3,
 }
@@ -95,7 +95,11 @@ impl Reputation {
 
     pub fn transfer_admin(env: Env, current_admin: Address, new_admin: Address) {
         current_admin.require_auth();
-        let stored: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&ADMIN)
+            .expect("not initialized");
         if stored != current_admin {
             panic!("not the admin");
         }
@@ -109,7 +113,11 @@ impl Reputation {
     /// Upgrade the contract WASM. Only the admin can call this.
     pub fn upgrade(env: Env, admin: Address, new_wasm_hash: Bytes) {
         admin.require_auth();
-        let stored: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
+        let stored: Address = env
+            .storage()
+            .instance()
+            .get(&ADMIN)
+            .expect("not initialized");
         if stored != admin {
             panic!("not the admin");
         }
@@ -148,7 +156,13 @@ impl Reputation {
     /// Set the default sybil threshold (admin only).
     pub fn set_default_threshold(env: Env, min_score: i64, min_reporters: u32) {
         Self::require_admin(&env);
-        env.storage().instance().set(&DEF_THRESH, &DefaultThreshold { min_score, min_reporters });
+        env.storage().instance().set(
+            &DEF_THRESH,
+            &DefaultThreshold {
+                min_score,
+                min_reporters,
+            },
+        );
     }
 
     /// Anti-sybil check using the stored default threshold.
@@ -159,9 +173,15 @@ impl Reputation {
             .get(&DEF_THRESH)
             .expect("default threshold not set");
         let key = Self::record_key(&subject);
-        match env.storage().persistent().get::<(Symbol, Address), ReputationRecord>(&key) {
+        match env
+            .storage()
+            .persistent()
+            .get::<(Symbol, Address), ReputationRecord>(&key)
+        {
             None => false,
-            Some(rec) => rec.score >= threshold.min_score && rec.reporter_count >= threshold.min_reporters,
+            Some(rec) => {
+                rec.score >= threshold.min_score && rec.reporter_count >= threshold.min_reporters
+            }
         }
     }
 
@@ -186,7 +206,11 @@ impl Reputation {
         // Rate limiting: enforce MIN_INTERVAL ledgers between submissions per (reporter, subject)
         let rate_key = Self::rate_key(&subject, &reporter);
         let current_ledger = env.ledger().sequence();
-        if let Some(last_ledger) = env.storage().persistent().get::<(Symbol, Address, Address), u32>(&rate_key) {
+        if let Some(last_ledger) = env
+            .storage()
+            .persistent()
+            .get::<(Symbol, Address, Address), u32>(&rate_key)
+        {
             if current_ledger <= last_ledger + MIN_INTERVAL {
                 return Err(ContractError::RateLimitExceeded);
             }
@@ -198,11 +222,11 @@ impl Reputation {
         let existing_record: Option<ReputationRecord> = env.storage().persistent().get(&rec_key);
         let is_new_subject = existing_record.is_none();
         let mut record: ReputationRecord = existing_record.unwrap_or(ReputationRecord {
-                subject: subject.clone(),
-                score: 0,
-                reporter_count: 0,
-                updated_at: now,
-            });
+            subject: subject.clone(),
+            score: 0,
+            reporter_count: 0,
+            updated_at: now,
+        });
 
         record.score = record.score.saturating_add(delta).max(0);
         record.updated_at = now;
@@ -241,9 +265,11 @@ impl Reputation {
         let score_cnt: u32 = env.storage().instance().get(&SCORE_CNT).unwrap_or(0);
         env.storage().instance().set(&SCORE_CNT, &(score_cnt + 1));
 
-        env.events()
-            .publish((symbol_short!("SCORE"), symbol_short!("updated")), (reporter, subject, delta));
-        
+        env.events().publish(
+            (symbol_short!("SCORE"), symbol_short!("updated")),
+            (reporter, subject, delta),
+        );
+
         Ok(())
     }
 
@@ -284,7 +310,11 @@ impl Reputation {
             .unwrap_or_else(|| Vec::new(&env));
 
         let cap: u32 = 100;
-        let effective_limit = if limit == 0 || limit > cap { cap } else { limit };
+        let effective_limit = if limit == 0 || limit > cap {
+            cap
+        } else {
+            limit
+        };
         let len = all.len();
         let start = offset.min(len);
         let end = (start + effective_limit).min(len);
@@ -305,7 +335,11 @@ impl Reputation {
         min_reporters: u32,
     ) -> bool {
         let key = Self::record_key(&subject);
-        match env.storage().persistent().get::<(Symbol, Address), ReputationRecord>(&key) {
+        match env
+            .storage()
+            .persistent()
+            .get::<(Symbol, Address), ReputationRecord>(&key)
+        {
             None => false,
             Some(rec) => {
                 if rec.score < min_score {
@@ -341,7 +375,11 @@ impl Reputation {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     fn require_admin(env: &Env) {
-        let admin: Address = env.storage().instance().get(&ADMIN).expect("not initialized");
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&ADMIN)
+            .expect("not initialized");
         admin.require_auth();
     }
 
@@ -401,9 +439,9 @@ mod tests {
         let contract_id = env.register_contract(None, Reputation);
         let client = ReputationClient::new(&env, &contract_id);
 
-        let admin    = Address::generate(&env);
+        let admin = Address::generate(&env);
         let reporter = Address::generate(&env);
-        let subject  = Address::generate(&env);
+        let subject = Address::generate(&env);
 
         client.initialize(&admin);
         client.add_reporter(&reporter);
@@ -426,9 +464,9 @@ mod tests {
         let contract_id = env.register_contract(None, Reputation);
         let client = ReputationClient::new(&env, &contract_id);
 
-        let admin    = Address::generate(&env);
+        let admin = Address::generate(&env);
         let reporter = Address::generate(&env);
-        let subject  = Address::generate(&env);
+        let subject = Address::generate(&env);
 
         client.initialize(&admin);
         client.add_reporter(&reporter);
@@ -469,10 +507,10 @@ mod tests {
         let contract_id = env.register_contract(None, Reputation);
         let client = ReputationClient::new(&env, &contract_id);
 
-        let admin     = Address::generate(&env);
+        let admin = Address::generate(&env);
         let reporter1 = Address::generate(&env);
         let reporter2 = Address::generate(&env);
-        let subject   = Address::generate(&env);
+        let subject = Address::generate(&env);
 
         client.initialize(&admin);
         client.add_reporter(&reporter1);
@@ -498,9 +536,9 @@ mod tests {
         let contract_id = env.register_contract(None, Reputation);
         let client = ReputationClient::new(&env, &contract_id);
 
-        let admin    = Address::generate(&env);
+        let admin = Address::generate(&env);
         let reporter = Address::generate(&env); // never added as reporter
-        let subject  = Address::generate(&env);
+        let subject = Address::generate(&env);
 
         client.initialize(&admin);
 
@@ -517,9 +555,9 @@ mod tests {
         let contract_id = env.register_contract(None, Reputation);
         let client = ReputationClient::new(&env, &contract_id);
 
-        let admin    = Address::generate(&env);
+        let admin = Address::generate(&env);
         let reporter = Address::generate(&env);
-        let subject  = Address::generate(&env);
+        let subject = Address::generate(&env);
 
         client.initialize(&admin);
         client.add_reporter(&reporter);
@@ -546,7 +584,7 @@ mod tests {
         client.initialize(&admin);
 
         let subject = Address::generate(&env); // no history
-        // Even with zero thresholds the contract returns false when no record exists
+                                               // Even with zero thresholds the contract returns false when no record exists
         assert!(!client.passes_sybil_check(&subject, &0, &0));
     }
 
@@ -559,9 +597,9 @@ mod tests {
         let contract_id = env.register_contract(None, Reputation);
         let client = ReputationClient::new(&env, &contract_id);
 
-        let admin    = Address::generate(&env);
+        let admin = Address::generate(&env);
         let reporter = Address::generate(&env);
-        let subject  = Address::generate(&env);
+        let subject = Address::generate(&env);
 
         client.initialize(&admin);
         client.add_reporter(&reporter);
@@ -582,10 +620,10 @@ mod tests {
         let contract_id = env.register_contract(None, Reputation);
         let client = ReputationClient::new(&env, &contract_id);
 
-        let admin     = Address::generate(&env);
+        let admin = Address::generate(&env);
         let reporter1 = Address::generate(&env);
         let reporter2 = Address::generate(&env);
-        let subject   = Address::generate(&env);
+        let subject = Address::generate(&env);
 
         client.initialize(&admin);
         client.add_reporter(&reporter1);
@@ -616,9 +654,9 @@ mod tests {
         let contract_id = env.register_contract(None, Reputation);
         let client = ReputationClient::new(&env, &contract_id);
 
-        let admin     = Address::generate(&env);
+        let admin = Address::generate(&env);
         let new_admin = Address::generate(&env);
-        let reporter  = Address::generate(&env);
+        let reporter = Address::generate(&env);
 
         client.initialize(&admin);
         client.transfer_admin(&admin, &new_admin);
@@ -634,7 +672,7 @@ mod tests {
         let contract_id = env.register_contract(None, Reputation);
         let client = ReputationClient::new(&env, &contract_id);
 
-        let admin    = Address::generate(&env);
+        let admin = Address::generate(&env);
         let attacker = Address::generate(&env);
         let new_admin = Address::generate(&env);
 
@@ -652,10 +690,10 @@ mod tests {
         let contract_id = env.register_contract(None, Reputation);
         let client = ReputationClient::new(&env, &contract_id);
 
-        let admin    = Address::generate(&env);
+        let admin = Address::generate(&env);
         let reporter = Address::generate(&env);
-        let unknown  = Address::generate(&env);
-        let subject  = Address::generate(&env);
+        let unknown = Address::generate(&env);
+        let subject = Address::generate(&env);
 
         client.initialize(&admin);
         client.add_reporter(&reporter);
@@ -681,9 +719,9 @@ mod tests {
         let contract_id = env.register_contract(None, Reputation);
         let client = ReputationClient::new(&env, &contract_id);
 
-        let admin    = Address::generate(&env);
+        let admin = Address::generate(&env);
         let reporter = Address::generate(&env);
-        let subject  = Address::generate(&env);
+        let subject = Address::generate(&env);
 
         client.initialize(&admin);
         client.add_reporter(&reporter);
@@ -712,11 +750,11 @@ mod tests {
         let contract_id = env.register_contract(None, Reputation);
         let client = ReputationClient::new(&env, &contract_id);
 
-        let admin     = Address::generate(&env);
+        let admin = Address::generate(&env);
         let reporter1 = Address::generate(&env);
         let reporter2 = Address::generate(&env);
         let reporter3 = Address::generate(&env);
-        let subject   = Address::generate(&env);
+        let subject = Address::generate(&env);
 
         client.initialize(&admin);
         client.add_reporter(&reporter1);
@@ -749,7 +787,7 @@ mod tests {
         let contract_id = env.register_contract(None, Reputation);
         let client = ReputationClient::new(&env, &contract_id);
 
-        let admin    = Address::generate(&env);
+        let admin = Address::generate(&env);
         let reporter = Address::generate(&env);
         let subject1 = Address::generate(&env);
         let subject2 = Address::generate(&env);
