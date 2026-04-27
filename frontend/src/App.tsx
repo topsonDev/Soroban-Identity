@@ -28,16 +28,27 @@ function useDarkMode(): [boolean, () => void] {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("identity");
+  const [verifyId, setVerifyId] = useState<string | null>(null);
   const wallet = useWallet();
   const [isDark, toggleDark] = useDarkMode();
   const { t, i18n } = useTranslation();
+
+  // Check for verify query param on load
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const verifyParam = urlParams.get('verify');
+    if (verifyParam) {
+      setVerifyId(verifyParam);
+      setTab("credentials");
+    }
+  }, []);
 
   // Mock fetch — replace with CredentialClient.getCredentialsBySubject() when wired
   const fetchCredentials = useCallback(async (_address: string): Promise<Credential[]> => {
     await new Promise((r) => setTimeout(r, 200));
     const now = Math.floor(Date.now() / 1000);
     return [
-      { id: "abc003", credentialType: "Reputation", subject: _address, issuer: "GISSUER", claims: {}, signature: "", issuedAt: now - 100, expiresAt: now + 3 * 24 * 60 * 60, revoked: false },
+      { id: "abc003", credentialType: "Reputation", subject: _address, issuer: "GISSUER", claims: {}, claimsHash: "mockhash", signature: "", issuedAt: now - 100, expiresAt: now + 3 * 24 * 60 * 60, revoked: false },
     ];
   }, []);
 
@@ -114,7 +125,7 @@ export default function App() {
       </div>
 
       {tab === "identity" && <IdentityPanel wallet={wallet} />}
-      {tab === "credentials" && <CredentialsPanel wallet={wallet} />}
+      {tab === "credentials" && <CredentialsPanel wallet={wallet} verifyId={verifyId} />}
     </div>
   );
 }

@@ -9,6 +9,7 @@ interface Props {
     connect: () => void;
     signTransaction: (xdr: string) => Promise<string>;
   };
+  verifyId?: string | null;
 }
 
 type VerifyState =
@@ -61,11 +62,11 @@ function getExpiryStyle(expiresAt: number): React.CSSProperties {
 
 // Mock credentials for demonstration — replace with SDK data when wired
 const MOCK_CREDENTIALS = [
-  { id: "abc001", credentialType: "Kyc" as CredentialType, subject: "GABC…", expiresAt: 0, claims: { name: "John Doe", country: "US" } },
-  { id: "abc002", credentialType: "Kyc" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 12 * 24 * 60 * 60 * 1000) / 1000), claims: { verified: "true" } },
-  { id: "abc003", credentialType: "Reputation" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000), claims: { score: "850", level: "gold" } },
-  { id: "abc004", credentialType: "Achievement" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() - 5 * 24 * 60 * 60 * 1000) / 1000), claims: {} },
-  { id: "abc005", credentialType: "Custom" as CredentialType, subject: "GABC…", expiresAt: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000), claims: { custom_field: "custom_value" } },
+  { id: "abc001", credentialType: "Kyc" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: { name: "John Doe", country: "US" }, claimsHash: "hash1", signature: "sig1", issuedAt: Date.now() / 1000 - 1000, expiresAt: 0, revoked: false },
+  { id: "abc002", credentialType: "Kyc" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: { verified: "true" }, claimsHash: "hash2", signature: "sig2", issuedAt: Date.now() / 1000 - 1000, expiresAt: Math.floor((Date.now() + 12 * 24 * 60 * 60 * 1000) / 1000), revoked: false },
+  { id: "abc003", credentialType: "Reputation" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: { score: "850", level: "gold" }, claimsHash: "hash3", signature: "sig3", issuedAt: Date.now() / 1000 - 1000, expiresAt: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000), revoked: false },
+  { id: "abc004", credentialType: "Achievement" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: {}, claimsHash: "hash4", signature: "sig4", issuedAt: Date.now() / 1000 - 1000, expiresAt: Math.floor((Date.now() - 5 * 24 * 60 * 60 * 1000) / 1000), revoked: false },
+  { id: "abc005", credentialType: "Custom" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: { custom_field: "custom_value" }, claimsHash: "hash5", signature: "sig5", issuedAt: Date.now() / 1000 - 1000, expiresAt: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000), revoked: false },
 ];
 
 const FILTER_OPTIONS: FilterType[] = ["All", "Kyc", "Reputation", "Achievement", "Custom"];
@@ -82,7 +83,7 @@ function countByType(creds: typeof MOCK_CREDENTIALS, type: FilterType): number {
   return creds.filter((c) => c.credentialType === type).length;
 }
 
-export default function CredentialsPanel({ wallet }: Props) {
+export default function CredentialsPanel({ wallet, verifyId }: Props) {
   const [credId, setCredId] = useState("");
   const [verifyState, setVerifyState] = useState<VerifyState>("idle");
   const [verifying, setVerifying] = useState(false);
@@ -103,6 +104,28 @@ export default function CredentialsPanel({ wallet }: Props) {
   const [searchedAddress, setSearchedAddress] = useState<string | null>(null);
   const [fetchedCredentials, setFetchedCredentials] = useState<typeof MOCK_CREDENTIALS | null>(null);
   const [fetching, setFetching] = useState(false);
+
+  const handleVerify = async () => {
+    if (!credId.trim()) return;
+    setVerifying(true);
+    setVerifyState("idle");
+    try {
+      // TODO: wire CredentialClient.verifyCredential() from SDK
+      await new Promise((r) => setTimeout(r, 800));
+      const mockResult = credId.startsWith("0")
+        ? { valid: false as const, reason: "revoked" as const }
+        : { valid: true as const };
+      if (mockResult.valid) {
+        setVerifyState("valid");
+      } else {
+        setVerifyState(mockResult.reason);
+      }
+    } catch {
+      setVerifyState("invalid");
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   // Check if connected wallet is a registered issuer
   useEffect(() => {
@@ -128,6 +151,17 @@ export default function CredentialsPanel({ wallet }: Props) {
 
     checkIssuerStatus();
   }, [wallet.connected, wallet.publicKey]);
+
+  // Handle deep link verification
+  useEffect(() => {
+    if (verifyId) {
+      setCredId(verifyId);
+      // Trigger verification after a short delay to ensure state is set
+      setTimeout(() => {
+        handleVerify();
+      }, 100);
+    }
+  }, [verifyId]);
 
   const handleSearch = async () => {
     const addr = searchAddress.trim();
@@ -203,28 +237,6 @@ export default function CredentialsPanel({ wallet }: Props) {
     activeFilter === "All"
       ? displayCredentials
       : displayCredentials.filter((c) => c.credentialType === activeFilter);
-
-  const handleVerify = async () => {
-    if (!credId.trim()) return;
-    setVerifying(true);
-    setVerifyState("idle");
-    try {
-      // TODO: wire CredentialClient.verifyCredential() from SDK
-      await new Promise((r) => setTimeout(r, 800));
-      const mockResult = credId.startsWith("0")
-        ? { valid: false as const, reason: "revoked" as const }
-        : { valid: true as const };
-      if (mockResult.valid) {
-        setVerifyState("valid");
-      } else {
-        setVerifyState(mockResult.reason);
-      }
-    } catch {
-      setVerifyState("invalid");
-    } finally {
-      setVerifying(false);
-    }
-  };
 
   const handleIssue = async () => {
     if (!wallet.connected) return;
@@ -362,7 +374,31 @@ export default function CredentialsPanel({ wallet }: Props) {
                   <span style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{cred.id}</span>
                   <span className="badge badge-green">{cred.credentialType}</span>
                   <span style={getExpiryStyle(cred.expiresAt)}>{formatExpiry(cred.expiresAt)}</span>
-                  <span style={{ marginLeft: "auto", fontSize: "1rem" }}>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const url = new URL(window.location.href);
+                      url.searchParams.set('verify', cred.id);
+                      navigator.clipboard.writeText(url.toString()).then(() => {
+                        alert('Share link copied to clipboard!');
+                      }).catch(() => {
+                        alert('Failed to copy link');
+                      });
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: "1rem",
+                      color: "var(--accent-light)",
+                      marginLeft: "auto",
+                      marginRight: "0.5rem",
+                    }}
+                    title="Copy share link"
+                  >
+                    🔗
+                  </button>
+                  <span style={{ fontSize: "1rem" }}>
                     {expandedCredId === cred.id ? "▼" : "▶"}
                   </span>
                 </div>

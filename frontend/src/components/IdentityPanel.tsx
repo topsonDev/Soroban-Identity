@@ -3,6 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import type { WalletState } from '../hooks/useWallet';
 import type { ReputationRecord } from '../../../sdk/src/reputation';
 import type { ScoreHistoryEntry } from '../../../sdk/src/reputation';
+import { useAddressHistory } from '../hooks/useAddressHistory';
 import SkeletonCard from './SkeletonCard';
 import ReputationChart from './ReputationChart';
 

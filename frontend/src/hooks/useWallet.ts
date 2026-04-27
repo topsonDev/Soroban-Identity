@@ -86,6 +86,7 @@ export function useWallet() {
         networkPassphrase,
         connected: true,
         connecting: false,
+        txLoading: false,
         walletType: "freighter",
         error: null,
       });
@@ -184,6 +185,7 @@ export function useWallet() {
         networkPassphrase: TESTNET_PASSPHRASE,
         connected: true,
         connecting: false,
+        txLoading: false,
         walletType: "walletconnect",
         error: null,
       });
@@ -196,6 +198,7 @@ export function useWallet() {
           networkPassphrase: null,
           connected: false,
           connecting: false,
+          txLoading: false,
           walletType: null,
           error: null,
         });
@@ -242,6 +245,7 @@ export function useWallet() {
       networkPassphrase: null,
       connected: false,
       connecting: false,
+      txLoading: false,
       walletType: null,
       error: null,
     });
