@@ -28,8 +28,6 @@ pub enum ContractError {
     ReporterNotFound = 2,
     RateLimitExceeded = 3,
     ReasonTooLong = 4,
-    ReporterNotFound = 2,
-    ReasonTooLong = 3,
 }
 
 /// Minimum ledger interval between submissions from the same reporter for the same subject.

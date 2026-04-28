@@ -1,14 +1,14 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, Env, Map,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env, Map,
     String, Symbol,
 };
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 
 #[contracterror]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Copy)]
 pub enum ContractError {
     DidNotFound = 1,
     DidDeactivated = 2,
@@ -93,7 +93,7 @@ impl IdentityRegistry {
     }
 
     /// Upgrade the contract WASM. Only the admin can call this.
-    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: Bytes) {
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) {
         admin.require_auth();
         let stored: Address = env
             .storage()
@@ -178,7 +178,7 @@ impl IdentityRegistry {
 
         // Hash the DID id + updated_at as a deterministic metadata fingerprint
         let mut hash_input = Bytes::new(&env);
-        hash_input.extend_from_slice(&doc.id.clone().into_bytes());
+        hash_input.extend_from_slice(&doc.id.clone().as_bytes());
         hash_input.extend_from_array(&doc.updated_at.to_be_bytes());
         let meta_hash = env.crypto().sha256(&hash_input);
         env.events().publish(
@@ -209,7 +209,7 @@ impl IdentityRegistry {
         }
 
         env.events().publish(
-            (IDENTITY, symbol_short!("deactivated")),
+            (IDENTITY, symbol_short!("deact")),
             (controller, doc.updated_at),
         );
     }
@@ -267,7 +267,7 @@ impl IdentityRegistry {
         key.extend_from_array(&[b'd', b'i', b'd', b':']);
         // append address bytes — Address implements IntoVal<Env, Bytes> indirectly
         // so we serialize via the env
-        let addr_bytes = controller.to_string().into_bytes();
+        let addr_bytes = controller.to_string().as_bytes();
         key.extend_from_slice(&addr_bytes);
         key
     }
@@ -276,8 +276,8 @@ impl IdentityRegistry {
         // did:stellar:<bech32-address>
         let prefix = String::from_str(env, "did:stellar:");
         let addr_str = controller.to_string();
-        let mut result = prefix.into_bytes();
-        result.extend_from_slice(&addr_str.into_bytes());
+        let mut result = prefix.as_bytes();
+        result.extend_from_slice(&addr_str.as_bytes());
         String::from_bytes(env, &result)
     }
 }
