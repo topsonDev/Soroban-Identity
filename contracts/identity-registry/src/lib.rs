@@ -278,7 +278,30 @@ impl IdentityRegistry {
         let addr_str = controller.to_string();
         let mut result = prefix.as_bytes();
         result.extend_from_slice(&addr_str.as_bytes());
-        String::from_bytes(env, &result)
+        let did = String::from_bytes(env, &result);
+        
+        // Validate the format
+        if !Self::validate_did_format(env, &did) {
+            panic!("Invalid DID format constructed");
+        }
+        
+        did
+    }
+
+    fn validate_did_format(env: &Env, did: &String) -> bool {
+        let did_bytes = did.as_bytes();
+        let prefix = b"did:stellar:";
+        if did_bytes.len() < prefix.len() {
+            return false;
+        }
+        // Check if it starts with "did:stellar:"
+        for i in 0..prefix.len() {
+            if did_bytes.get(i).unwrap() != prefix[i] {
+                return false;
+            }
+        }
+        // Check that there's something after the prefix
+        did_bytes.len() > prefix.len()
     }
 }
 
@@ -324,6 +347,36 @@ mod tests {
         let doc = client.resolve_did(&user);
         assert!(doc.active);
         assert_eq!(doc.controller, user);
+    }
+
+    #[test]
+    fn test_did_format_validation() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, IdentityRegistry);
+        let client = IdentityRegistryClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin);
+
+        let user = Address::generate(&env);
+        let metadata: Map<String, String> = Map::new(&env);
+
+        let did_id = client.create_did(&user, &metadata);
+        
+        // Test that the DID format is valid
+        assert!(IdentityRegistry::validate_did_format(&env, &did_id));
+        
+        // Test the exact format: did:stellar:<address>
+        let did_str = did_id.to_string();
+        assert!(did_str.starts_with("did:stellar:"));
+        assert!(did_str.len() > "did:stellar:".len());
+        
+        // The address part should match the controller
+        let expected_addr = user.to_string();
+        let addr_part = &did_str["did:stellar:".len()..];
+        assert_eq!(addr_part, expected_addr);
     }
 
     #[test]
