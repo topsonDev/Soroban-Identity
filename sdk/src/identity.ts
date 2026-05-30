@@ -11,20 +11,14 @@ import type { CallOptions, DidDocument, IdentityStorageStats, SorobanIdentityCon
 import { retryWithBackoff, validateStellarAddress, pollTransactionStatus } from "./utils";
 import { ContractError } from "./errors";
 import { IDENTITY_REGISTRY_ERRORS } from "./error-codes";
-import { getOrCreateServer } from "./base-client";
+import { BaseClient } from "./base-client";
 
 // Dummy address used for lightweight initialization probes
 const PROBE_ADDRESS = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
 
-export class IdentityClient {
-  private server: SorobanRpc.Server;
-  private contract: Contract;
-  private config: SorobanIdentityConfig;
-
+export class IdentityClient extends BaseClient {
   constructor(config: SorobanIdentityConfig) {
-    this.config = config;
-    this.server = getOrCreateServer(config.rpcUrl);
-    this.contract = new Contract(config.identityRegistryId);
+    super(config, config.identityRegistryId);
   }
 
   /**

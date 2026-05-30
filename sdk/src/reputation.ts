@@ -21,7 +21,7 @@ import {
 import { SorobanTransactionBuilder } from './transaction-builder';
 import { ContractError } from './errors';
 import { REPUTATION_ERRORS } from './error-codes';
-import { getOrCreateServer } from './base-client';
+import { BaseClient } from './base-client';
 
 const PROBE_ADDRESS = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
 
@@ -39,15 +39,9 @@ export interface ScoreHistoryEntry {
   submittedAt: number;
 }
 
-export class ReputationClient {
-  private server: SorobanRpc.Server;
-  private contract: Contract;
-  private config: SorobanIdentityConfig;
-
+export class ReputationClient extends BaseClient {
   constructor(config: SorobanIdentityConfig) {
-    this.config = config;
-    this.server = getOrCreateServer(config.rpcUrl);
-    this.contract = new Contract(config.reputationId);
+    super(config, config.reputationId);
   }
 
   /** Returns true if the reputation contract has been initialized. */
