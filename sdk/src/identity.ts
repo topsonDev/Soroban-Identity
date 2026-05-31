@@ -6,6 +6,7 @@ import {
   Keypair,
   nativeToScVal,
   scValToNative,
+  Account,
 } from "@stellar/stellar-sdk";
 import type { CallOptions, DidDocument, IdentityStorageStats, SorobanIdentityConfig, WriteResult } from "./types";
 import { retryWithBackoff, validateStellarAddress, pollTransactionStatus } from "./utils";
@@ -28,7 +29,7 @@ export class IdentityClient extends BaseClient {
   async isInitialized(): Promise<boolean> {
     try {
       return await this.executeWithFailover(async (server) => {
-        const account = await server.getAccount(PROBE_ADDRESS);
+        const account = new Account(PROBE_ADDRESS, "0");
       const tx = new TransactionBuilder(account, {
         fee: BASE_FEE,
         networkPassphrase: this.config.networkPassphrase,
@@ -168,7 +169,7 @@ export class IdentityClient extends BaseClient {
    */
   async resolveDid(controllerAddress: string, options?: CallOptions): Promise<DidDocument> {
     validateStellarAddress(controllerAddress);
-    const account = await this.server.getAccount(controllerAddress);
+    const account = new Account(controllerAddress, "0");
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
@@ -209,7 +210,7 @@ export class IdentityClient extends BaseClient {
    */
   async hasActiveDid(controllerAddress: string, options?: CallOptions): Promise<boolean> {
     validateStellarAddress(controllerAddress);
-    const account = await this.server.getAccount(controllerAddress);
+    const account = new Account(controllerAddress, "0");
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
@@ -238,7 +239,7 @@ export class IdentityClient extends BaseClient {
    * Get the total count of active DIDs.
    */
   async getDidCount(options?: CallOptions): Promise<number> {
-    const account = await this.server.getAccount(this.config.identityRegistryId);
+    const account = new Account(this.config.identityRegistryId, "0");
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
@@ -307,7 +308,7 @@ export class IdentityClient extends BaseClient {
   /** Get storage usage statistics for the identity registry. */
   async getStorageStats(callerAddress: string, options?: CallOptions): Promise<IdentityStorageStats> {
     validateStellarAddress(callerAddress);
-    const account = await this.server.getAccount(callerAddress);
+    const account = new Account(callerAddress, "0");
     const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
 
     const tx = new TransactionBuilder(account, {
