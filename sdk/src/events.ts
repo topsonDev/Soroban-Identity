@@ -1,7 +1,7 @@
 import { SorobanRpc, Contract, xdr, scValToNative } from '@stellar/stellar-sdk';
 
 export interface EventFilter {
-  topic?: string[][];
+  topic?: string[] | string[][];
   contractId?: string;
 }
 
@@ -45,7 +45,7 @@ export class SorobanEventListener {
             {
               type: 'contract',
               contractIds: [this.contractId],
-              topics: this.filter?.topic,
+              topics: this.getTopicsFilter(),
             },
           ],
           limit: 100,
@@ -118,5 +118,11 @@ export class SorobanEventListener {
     } catch {
       return null;
     }
+  }
+
+  private getTopicsFilter(): string[][] | undefined {
+    const topic = this.filter?.topic;
+    if (!topic) return undefined;
+    return Array.isArray(topic[0]) ? (topic as string[][]) : [topic as string[]];
   }
 }

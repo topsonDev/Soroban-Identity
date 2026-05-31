@@ -24,7 +24,7 @@ type IdentityAction =
   | { type: 'FETCH_ERROR'; message: string; errorType: 'network' | 'contract' }
   | { type: 'RESET' };
 
-function identityReducer(state: IdentityState, action: IdentityAction): IdentityState {
+function identityReducer(_state: IdentityState, action: IdentityAction): IdentityState {
   switch (action.type) {
     case 'FETCH_START': return { status: 'loading' };
     case 'FETCH_SUCCESS': return { status: 'success', did: action.did, reputation: action.reputation, scoreHistory: action.scoreHistory };
@@ -95,6 +95,7 @@ export default function IdentityPanel() {
     setSybilResult(null);
     try {
       // TODO: wire IdentityClient.resolveDid() from SDK
+      // const identity = new IdentityClient(networkConfig);
       await new Promise((r) => setTimeout(r, 800));
       const mock: DidDocument = {
         id: `did:stellar:${address}`,

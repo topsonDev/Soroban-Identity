@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import SignClient from "@walletconnect/sign-client";
+import type { FrontendNetworkConfig } from "../network";
 import { getNetworkConfig, getActiveNetwork } from "../network";
 
 // ── Freighter types ───────────────────────────────────────────────────────────
@@ -32,14 +33,9 @@ export interface WalletState {
 // WalletConnect project ID — replace with your own from https://cloud.walletconnect.com
 const WC_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? "YOUR_PROJECT_ID";
 
-const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
-
-// Stellar Testnet chain for WalletConnect
-const STELLAR_CHAIN = "stellar:testnet";
-
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-export function useWallet() {
+export function useWallet(networkConfig: FrontendNetworkConfig) {
   const [state, setState] = useState<WalletState>({
     publicKey: null,
     networkPassphrase: null,
@@ -172,7 +168,7 @@ export function useWallet() {
         requiredNamespaces: {
           stellar: {
             methods: ["stellar_signXDR"],
-            chains: [STELLAR_CHAIN],
+            chains: [networkConfig.walletConnectChain],
             events: ["accountsChanged"],
           },
         },
@@ -189,7 +185,7 @@ export function useWallet() {
       const session = await approval();
       wcTopicRef.current = session.topic;
 
-      // Extract Stellar public key from namespace accounts (format: "stellar:testnet:GXXX...")
+      // Extract Stellar public key from namespace accounts (format: "stellar:<network>:GXXX...")
       const accounts = session.namespaces.stellar?.accounts ?? [];
       const publicKey = accounts[0]?.split(":")[2] ?? null;
 
@@ -197,7 +193,7 @@ export function useWallet() {
 
       setState({
         publicKey,
-        networkPassphrase: TESTNET_PASSPHRASE,
+        networkPassphrase: networkConfig.networkPassphrase,
         connected: true,
         connecting: false,
         txLoading: false,
@@ -226,7 +222,7 @@ export function useWallet() {
         error: e instanceof Error ? e.message : "WalletConnect connection failed",
       }));
     }
-  }, []);
+  }, [networkConfig.networkPassphrase, networkConfig.walletConnectChain]);
 
   // ── Auto-reconnect on mount ─────────────────────────────────────────────────
   
@@ -296,7 +292,7 @@ export function useWallet() {
           }
           const result = await wcClientRef.current.request<{ signedXDR: string }>({
             topic: wcTopicRef.current,
-            chainId: STELLAR_CHAIN,
+            chainId: networkConfig.walletConnectChain,
             request: {
               method: "stellar_signXDR",
               params: { xdr },
@@ -316,7 +312,12 @@ export function useWallet() {
         setState((s) => ({ ...s, txLoading: false }));
       }
     },
-    [state.connected, state.walletType, state.networkPassphrase]
+    [
+      networkConfig.walletConnectChain,
+      state.connected,
+      state.walletType,
+      state.networkPassphrase,
+    ]
   );
 
   return { ...state, connect, disconnect, signTransaction };

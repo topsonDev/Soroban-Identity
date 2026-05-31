@@ -118,11 +118,6 @@ describe('IdentityClient', () => {
   });
 
   it('createDid — happy path returns the new DID string', async () => {
-    // Bypass the real 2s polling delay
-    (client as any).waitForConfirmation = vi.fn().mockResolvedValue({
-      returnValue: 'did:stellar:GABC',
-    });
-
     const keypair = { publicKey: () => 'GABC', sign: vi.fn() } as any;
 
     const result = await client.createDid(keypair, {

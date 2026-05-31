@@ -7,8 +7,8 @@
 //! so scores can be audited or disputed.
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, Env, Symbol,
-    Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
+    Symbol, Vec,
 };
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
@@ -39,7 +39,7 @@ const MIN_INTERVAL: u32 = 100;
 
 /// Storage usage statistics for the reputation contract.
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ReputationStorageStats {
     pub total_subjects: u32,
     pub total_score_entries: u32,
@@ -47,7 +47,7 @@ pub struct ReputationStorageStats {
 
 /// Aggregated reputation record for a subject.
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ReputationRecord {
     pub subject: Address,
     /// Total accumulated score (can be negative)
@@ -60,7 +60,7 @@ pub struct ReputationRecord {
 
 /// Stored default sybil threshold set by the admin.
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DefaultThreshold {
     pub min_score: i64,
     pub min_reporters: u32,
@@ -68,7 +68,7 @@ pub struct DefaultThreshold {
 
 /// A single score submission from a reporter.
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ScoreEntry {
     pub reporter: Address,
     pub delta: i64,
@@ -133,7 +133,7 @@ impl Reputation {
     }
 
     /// Upgrade the contract WASM. Only the admin can call this.
-    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: Bytes) -> Result<(), ContractError> {
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), ContractError> {
         admin.require_auth();
         let stored: Address = env
             .storage()
@@ -546,7 +546,10 @@ impl Reputation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Env, String};
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger as _},
+        Env, String,
+    };
 
     #[test]
     fn test_double_initialize_returns_error() {
@@ -611,23 +614,23 @@ mod tests {
         }
 
         // First page: offset=0, limit=2 → entries 0,1
-        let page1 = client.get_history(&subject, &reporter, &0, &2).unwrap();
+        let page1 = client.get_history(&subject, &reporter, &0, &2);
         assert_eq!(page1.len(), 2);
         assert_eq!(page1.get(0).unwrap().delta, 0);
         assert_eq!(page1.get(1).unwrap().delta, 1);
 
         // Second page: offset=2, limit=2 → entries 2,3
-        let page2 = client.get_history(&subject, &reporter, &2, &2).unwrap();
+        let page2 = client.get_history(&subject, &reporter, &2, &2);
         assert_eq!(page2.len(), 2);
         assert_eq!(page2.get(0).unwrap().delta, 2);
 
         // Last page: offset=4, limit=10 → only entry 4 remains
-        let page3 = client.get_history(&subject, &reporter, &4, &10).unwrap();
+        let page3 = client.get_history(&subject, &reporter, &4, &10);
         assert_eq!(page3.len(), 1);
         assert_eq!(page3.get(0).unwrap().delta, 4);
 
         // Offset beyond length → empty
-        let empty = client.get_history(&subject, &reporter, &99, &10).unwrap();
+        let empty = client.get_history(&subject, &reporter, &99, &10);
         assert_eq!(empty.len(), 0);
     }
 
@@ -768,12 +771,12 @@ mod tests {
         client.submit_score(&reporter1, &subject, &20, &r1);
         client.submit_score(&reporter2, &subject, &99, &r2);
 
-        let h1 = client.get_history(&subject, &reporter1, &0, &10).unwrap();
+        let h1 = client.get_history(&subject, &reporter1, &0, &10);
         assert_eq!(h1.len(), 2);
         assert_eq!(h1.get(0).unwrap().delta, 10);
         assert_eq!(h1.get(1).unwrap().delta, 20);
 
-        let h2 = client.get_history(&subject, &reporter2, &0, &10).unwrap();
+        let h2 = client.get_history(&subject, &reporter2, &0, &10);
         assert_eq!(h2.len(), 1);
         assert_eq!(h2.get(0).unwrap().delta, 99);
     }
@@ -797,6 +800,7 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
     fn test_transfer_admin_unauthorized() {
         let env = Env::default();
         env.mock_all_auths();
@@ -835,7 +839,7 @@ mod tests {
 
         // Registered reporter should work
         let result = client.get_history(&subject, &reporter, &0, &10);
-        assert!(result.is_ok());
+        assert_eq!(result.len(), 1);
 
         // Unknown reporter should return error
         let result = client.try_get_history(&subject, &unknown, &0, &10);
@@ -933,7 +937,9 @@ mod tests {
 
         let reason = String::from_str(&env, "activity");
         client.submit_score(&reporter, &subject1, &10, &reason);
+        env.ledger().with_mut(|li| li.sequence_number += 101);
         client.submit_score(&reporter, &subject1, &20, &reason);
+        env.ledger().with_mut(|li| li.sequence_number += 101);
         client.submit_score(&reporter, &subject2, &30, &reason);
 
         let stats = client.get_storage_stats();

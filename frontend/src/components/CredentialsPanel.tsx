@@ -15,6 +15,19 @@ type VerifyState =
   | "invalid";
 
 type FilterType = "All" | CredentialType;
+type CredentialStatus = "active" | "expired" | "revoked";
+type DemoCredential = {
+  id: string;
+  credentialType: CredentialType;
+  subject: string;
+  issuer: string;
+  claims: Record<string, string>;
+  claimsHash: string;
+  signature: string;
+  issuedAt: number;
+  expiresAt: number;
+  revoked: boolean;
+};
 
 function formatExpiry(expiresAt: number): string {
   if (expiresAt === 0) return "No expiry";
@@ -54,14 +67,43 @@ function getExpiryStyle(expiresAt: number): React.CSSProperties {
   return { color: "var(--text-muted)" };
 }
 
+function isExpired(expiresAt: number): boolean {
+  return expiresAt > 0 && Date.now() / 1000 > expiresAt;
+}
+
+function getCredentialStatus(credential: DemoCredential): CredentialStatus {
+  if (credential.revoked) return "revoked";
+  if (isExpired(credential.expiresAt)) return "expired";
+  return "active";
+}
+
+function getStatusBadgeClass(status: CredentialStatus): string {
+  if (status === "revoked") return "badge badge-red";
+  if (status === "expired") return "badge badge-gray";
+  return "badge badge-green";
+}
+
+function getStatusLabel(status: CredentialStatus): string {
+  if (status === "revoked") return "Revoked";
+  if (status === "expired") return "Expired";
+  return "Active";
+}
+
+function getStatusSortRank(credential: DemoCredential): number {
+  const status = getCredentialStatus(credential);
+  if (status === "active") return 0;
+  if (status === "expired") return 1;
+  return 2;
+}
+
 // Mock credentials for demonstration — replace with SDK data when wired
-const MOCK_CREDENTIALS = [
-  { id: "abc001", credentialType: "Kyc" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: { name: "John Doe", country: "US" }, claimsHash: "hash1", signature: "sig1", issuedAt: Date.now() / 1000 - 1000, expiresAt: 0, revoked: false },
-  { id: "abc002", credentialType: "Kyc" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: { verified: "true" }, claimsHash: "hash2", signature: "sig2", issuedAt: Date.now() / 1000 - 1000, expiresAt: Math.floor((Date.now() + 12 * 24 * 60 * 60 * 1000) / 1000), revoked: false },
-  { id: "abc003", credentialType: "Reputation" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: { score: "850", level: "gold" }, claimsHash: "hash3", signature: "sig3", issuedAt: Date.now() / 1000 - 1000, expiresAt: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000), revoked: false },
-  { id: "abc004", credentialType: "Achievement" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: {}, claimsHash: "hash4", signature: "sig4", issuedAt: Date.now() / 1000 - 1000, expiresAt: Math.floor((Date.now() - 5 * 24 * 60 * 60 * 1000) / 1000), revoked: false },
-  { id: "abc005", credentialType: "Custom" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: { custom_field: "custom_value" }, claimsHash: "hash5", signature: "sig5", issuedAt: Date.now() / 1000 - 1000, expiresAt: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000), revoked: false },
-  { id: "abc006", credentialType: "Kyc" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: { reason: "compromised" }, claimsHash: "hash6", signature: "sig6", issuedAt: Date.now() / 1000 - 2000, expiresAt: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000), revoked: true },
+const MOCK_CREDENTIALS: DemoCredential[] = [
+  { id: "abc001", credentialType: "Kyc", subject: "GABC…", issuer: "GISSUER", claims: { name: "John Doe", country: "US" }, claimsHash: "hash1", signature: "sig1", issuedAt: Math.floor(Date.now() / 1000) - 1000, expiresAt: 0, revoked: false },
+  { id: "abc002", credentialType: "Kyc", subject: "GABC…", issuer: "GISSUER", claims: { verified: "true" }, claimsHash: "hash2", signature: "sig2", issuedAt: Math.floor(Date.now() / 1000) - 1000, expiresAt: Math.floor((Date.now() + 12 * 24 * 60 * 60 * 1000) / 1000), revoked: false },
+  { id: "abc003", credentialType: "Reputation", subject: "GABC…", issuer: "GISSUER", claims: { score: "850", level: "gold" }, claimsHash: "hash3", signature: "sig3", issuedAt: Math.floor(Date.now() / 1000) - 1000, expiresAt: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000), revoked: false },
+  { id: "abc004", credentialType: "Achievement", subject: "GABC…", issuer: "GISSUER", claims: {}, claimsHash: "hash4", signature: "sig4", issuedAt: Math.floor(Date.now() / 1000) - 1000, expiresAt: Math.floor((Date.now() - 5 * 24 * 60 * 60 * 1000) / 1000), revoked: false },
+  { id: "abc005", credentialType: "Custom", subject: "GABC…", issuer: "GISSUER", claims: { custom_field: "custom_value" }, claimsHash: "hash5", signature: "sig5", issuedAt: Math.floor(Date.now() / 1000) - 1000, expiresAt: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000), revoked: true },
+  { id: "abc006", credentialType: "Kyc", subject: "GABC…", issuer: "GISSUER", claims: { reason: "compromised" }, claimsHash: "hash6", signature: "sig6", issuedAt: Math.floor(Date.now() / 1000) - 2000, expiresAt: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000), revoked: true },
 ];
 
 const FILTER_OPTIONS: FilterType[] = ["All", "Kyc", "Reputation", "Achievement", "Custom"];
@@ -73,55 +115,24 @@ const CREDENTIAL_TYPE_ICONS: Record<CredentialType, string> = {
   Custom: "📋",
 };
 
-function countByType(creds: typeof MOCK_CREDENTIALS, type: FilterType): number {
+function countByType(creds: DemoCredential[], type: FilterType): number {
   if (type === "All") return creds.length;
   return creds.filter((c) => c.credentialType === type).length;
 }
 
-type CredentialStatus = "active" | "expired" | "revoked";
-
-function credentialStatus(cred: { revoked: boolean; expiresAt: number }): CredentialStatus {
-  if (cred.revoked) return "revoked";
-  if (cred.expiresAt !== 0 && cred.expiresAt * 1000 < Date.now()) return "expired";
-  return "active";
-}
-
-const STATUS_BADGE_CLASS: Record<CredentialStatus, string> = {
-  active: "badge badge-green",
-  expired: "badge badge-gray",
-  revoked: "badge badge-red",
-};
-
-const STATUS_LABEL: Record<CredentialStatus, string> = {
-  active: "Active",
-  expired: "Expired",
-  revoked: "Revoked",
-};
-
-/**
- * Sort order: active credentials first, then expired, then revoked. Within
- * each bucket the original input order is preserved. Verifiers should see
- * still-presentable credentials before stale ones.
- */
-const STATUS_RANK: Record<CredentialStatus, number> = {
-  active: 0,
-  expired: 1,
-  revoked: 2,
-};
-
 type CredentialState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'success'; credentials: typeof MOCK_CREDENTIALS; searchedAddress: string }
+  | { status: 'success'; credentials: DemoCredential[]; searchedAddress: string }
   | { status: 'error'; message: string };
 
 type CredentialAction =
   | { type: 'FETCH_START' }
-  | { type: 'FETCH_SUCCESS'; credentials: typeof MOCK_CREDENTIALS; searchedAddress: string }
+  | { type: 'FETCH_SUCCESS'; credentials: DemoCredential[]; searchedAddress: string }
   | { type: 'FETCH_ERROR'; message: string }
   | { type: 'RESET' };
 
-function credentialReducer(state: CredentialState, action: CredentialAction): CredentialState {
+function credentialReducer(_state: CredentialState, action: CredentialAction): CredentialState {
   switch (action.type) {
     case 'FETCH_START': return { status: 'loading' };
     case 'FETCH_SUCCESS': return { status: 'success', credentials: action.credentials, searchedAddress: action.searchedAddress };
@@ -230,6 +241,7 @@ export default function CredentialsPanel({ verifyId }: { verifyId?: string | nul
     dispatchCredential({ type: 'FETCH_START' });
     try {
       // TODO: wire CredentialClient.getCredentialsBySubject() from SDK
+      // const credentials = new CredentialClient(networkConfig);
       await new Promise((r) => setTimeout(r, 600));
       const results = MOCK_CREDENTIALS.filter((c) => c.subject === addr);
       dispatchCredential({ type: 'FETCH_SUCCESS', credentials: results, searchedAddress: addr });
@@ -285,18 +297,14 @@ export default function CredentialsPanel({ verifyId }: { verifyId?: string | nul
 
   const displayCredentials = fetchedCredentials ?? MOCK_CREDENTIALS;
 
-  const filteredCredentials = (
+  const filteredCredentials =
     activeFilter === "All"
       ? displayCredentials
-      : displayCredentials.filter((c) => c.credentialType === activeFilter)
-  )
-    .map((c, originalIndex) => ({ c, originalIndex, status: credentialStatus(c) }))
-    .sort((a, b) => {
-      const rank = STATUS_RANK[a.status] - STATUS_RANK[b.status];
-      if (rank !== 0) return rank;
-      return a.originalIndex - b.originalIndex;
-    })
-    .map(({ c }) => c);
+      : displayCredentials.filter((c) => c.credentialType === activeFilter);
+
+  const sortedCredentials = [...filteredCredentials].sort(
+    (a, b) => getStatusSortRank(a) - getStatusSortRank(b)
+  );
 
   const handleIssue = async () => {
     if (!wallet.connected) return;
@@ -395,7 +403,9 @@ export default function CredentialsPanel({ verifyId }: { verifyId?: string | nul
           </p>
         ) : (
           <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            {filteredCredentials.map((cred) => (
+            {sortedCredentials.map((cred) => {
+              const status = getCredentialStatus(cred);
+              return (
               <li
                 key={cred.id}
                 style={{
@@ -404,46 +414,37 @@ export default function CredentialsPanel({ verifyId }: { verifyId?: string | nul
                   overflow: "hidden",
                 }}
               >
-                <div
-                  role="button"
-                  tabIndex={0}
+                <button
+                  type="button"
                   aria-expanded={expandedCredId === cred.id}
                   style={{
                     padding: "0.6rem 1rem",
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
+                    width: "100%",
                     fontSize: "0.85rem",
                     color: "var(--text)",
                     gap: "1rem",
                     cursor: "pointer",
+                    background: "var(--cred-item-bg)",
+                    border: 0,
+                    borderRadius: 0,
+                    textAlign: "left",
                   }}
                   onClick={() => setExpandedCredId(expandedCredId === cred.id ? null : cred.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      setExpandedCredId(expandedCredId === cred.id ? null : cred.id);
-                    } else if (e.key === "Escape") {
-                      setExpandedCredId(null);
-                    }
-                  }}
                 >
                   <span style={{ fontSize: "1.2rem", minWidth: "1.5rem" }}>
                     {CREDENTIAL_TYPE_ICONS[cred.credentialType] || "📋"}
                   </span>
                   <span style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{cred.id}</span>
                   <span className="badge badge-green">{cred.credentialType}</span>
-                  {(() => {
-                    const status = credentialStatus(cred);
-                    return (
-                      <span
-                        className={STATUS_BADGE_CLASS[status]}
-                        aria-label={`Credential status: ${STATUS_LABEL[status]}`}
-                      >
-                        {STATUS_LABEL[status]}
-                      </span>
-                    );
-                  })()}
+                  <span
+                    className={getStatusBadgeClass(status)}
+                    aria-label={`Credential status: ${getStatusLabel(status)}`}
+                  >
+                    {getStatusLabel(status)}
+                  </span>
                   <span style={getExpiryStyle(cred.expiresAt)}>{formatExpiry(cred.expiresAt)}</span>
                   <button
                     onClick={(e) => {
@@ -472,7 +473,7 @@ export default function CredentialsPanel({ verifyId }: { verifyId?: string | nul
                   <span style={{ fontSize: "1rem" }}>
                     {expandedCredId === cred.id ? "▼" : "▶"}
                   </span>
-                </div>
+                </button>
                 {expandedCredId === cred.id && (
                   <div style={{ padding: "0.75rem 1rem", borderTop: "1px solid var(--border-input)", background: "var(--card-bg-accent)" }}>
                     <dl style={{ margin: "0 0 0.75rem", fontSize: "0.8rem" }}>
@@ -500,7 +501,8 @@ export default function CredentialsPanel({ verifyId }: { verifyId?: string | nul
                   </div>
                 )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </div>

@@ -7,9 +7,15 @@ import WalletButton from "./components/WalletButton";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { useWallet } from "./hooks/useWallet";
 import { useCredentialExpiryCheck } from "./hooks/useCredentialExpiryCheck";
-import { checkConnection, TESTNET_CONFIG, IdentityClient, CredentialClient, ReputationClient } from "../../sdk/src/index";
+import {
+  DEFAULT_NETWORK,
+  NETWORK_CONFIGS,
+  NETWORK_OPTIONS,
+  isMainnet,
+  type NetworkName,
+} from "./network";
+import { checkConnection, IdentityClient, CredentialClient, ReputationClient } from "../../sdk/src/index";
 import { getAppConfig } from "./config";
-import { getActiveNetwork, getNetworkConfig, isMainnet } from "./network";
 import type { Credential } from "../../sdk/src/types";
 
 type Tab = "identity" | "credentials";
@@ -33,8 +39,10 @@ function useDarkMode(): [boolean, () => void] {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("identity");
+  const [activeNetwork, setActiveNetwork] = useState<NetworkName>(DEFAULT_NETWORK);
   const [verifyId, setVerifyId] = useState<string | null>(null);
-  const wallet = useWallet();
+  const networkConfig = NETWORK_CONFIGS[activeNetwork];
+  const wallet = useWallet(networkConfig);
   const [isDark, toggleDark] = useDarkMode();
   const { t, i18n } = useTranslation();
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
@@ -50,9 +58,7 @@ export default function App() {
     }
   }, []);
 
-  const network = getActiveNetwork();
-  const networkConfig = getNetworkConfig(network);
-  const onMainnet = isMainnet(network);
+  const onMainnet = isMainnet(activeNetwork);
 
   // Check RPC connection health on load
   useEffect(() => {
@@ -171,6 +177,19 @@ export default function App() {
           >
             {i18n.language === "en" ? "ES" : "EN"}
           </button>
+          <label className="network-switcher" aria-label="Network">
+            <span>Network</span>
+            <select
+              value={activeNetwork}
+              onChange={(e) => setActiveNetwork(e.target.value as NetworkName)}
+            >
+              {NETWORK_OPTIONS.map((network) => (
+                <option key={network.name} value={network.name}>
+                  {network.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             className="theme-toggle"
             onClick={toggleDark}
