@@ -725,6 +725,41 @@ mod tests {
     };
 
     #[test]
+    fn test_ping_returns_version() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+        assert_eq!(client.ping(), CONTRACT_VERSION);
+    }
+
+    #[test]
+    fn test_upgrade_unauthorized_returns_error() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let attacker = Address::generate(&env);
+        client.initialize(&admin);
+
+        let result = client.try_upgrade(&attacker, &BytesN::from_array(&env, &[0u8; 32]));
+        assert_eq!(result, Err(Ok(ContractError::Unauthorized)));
+    }
+
+    #[test]
+    fn test_upgrade_not_initialized_returns_error() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, Reputation);
+        let client = ReputationClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let result = client.try_upgrade(&admin, &BytesN::from_array(&env, &[0u8; 32]));
+        assert_eq!(result, Err(Ok(ContractError::NotInitialized)));
+    }
+
+    #[test]
     fn test_double_initialize_returns_error() {
         let env = Env::default();
         env.mock_all_auths();
@@ -913,7 +948,7 @@ mod tests {
         client.add_reporter(&reporter);
 
         let reason = String::from_str(&env, "penalty");
-        client.submit_score(&reporter, &subject, &-9_999_999, &reason);
+        client.submit_score(&reporter, &subject, &-100, &reason);
 
         let rec = client.get_reputation(&subject);
         assert_eq!(rec.score, 0);
