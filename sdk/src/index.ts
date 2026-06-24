@@ -15,6 +15,7 @@ export {
 export {
   ContractError,
   SorobanIdentityError,
+  RateLimitError,
   classifyError,
   wrapError,
 } from './errors';

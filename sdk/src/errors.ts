@@ -99,6 +99,36 @@ export class SorobanIdentityError extends Error {
 }
 
 /**
+ * Thrown when the RPC provider responds with HTTP 429 and the SDK has
+ * exhausted its retry budget. Consumers should honour `retryAfterMs`
+ * before re-submitting the request.
+ *
+ * @example
+ * ```ts
+ * import { RateLimitError } from '@soroban-identity/sdk';
+ * try {
+ *   await identity.resolveDid(address);
+ * } catch (err) {
+ *   if (err instanceof RateLimitError) {
+ *     await sleep(err.retryAfterMs);
+ *     // retry…
+ *   }
+ * }
+ * ```
+ */
+export class RateLimitError extends Error {
+  /** Milliseconds to wait before the next request attempt. */
+  readonly retryAfterMs: number;
+  readonly code: SorobanErrorCode = "RATE_LIMITED";
+
+  constructor(retryAfterMs: number) {
+    super(`Rate limited — retry after ${retryAfterMs}ms`);
+    this.name = "RateLimitError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+/**
  * A typed contract-level error parsed from an RPC simulation failure.
  *
  * Use {@link ContractError.extract} to decode a `#N` marker out of an error
