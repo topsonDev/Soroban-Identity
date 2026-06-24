@@ -399,7 +399,8 @@ impl CredentialManager {
         Ok(())
     }
 
-    /// Verifies that a credential is valid — not revoked and not expired.
+    /// Verifies that a credential is valid and returns a typed result describing
+    /// any failure reason.
     ///
     /// Uses the on-chain ledger timestamp for expiry checks, preventing
     /// caller-supplied time spoofing. Bumps the storage TTL on success so
@@ -410,24 +411,31 @@ impl CredentialManager {
     /// * `credential_id` - The 32-byte ID of the credential to verify.
     ///
     /// # Returns
-    /// `true` if the credential exists, is not revoked, and has not expired.
-    /// `false` otherwise (including if the credential does not exist).
-    pub fn verify_credential(env: Env, credential_id: BytesN<32>) -> bool {
+    /// `Ok(())` if the credential exists, is not revoked, and has not expired.
+    ///
+    /// # Errors
+    /// Returns [`ContractError::CredentialNotFound`] when no credential with the
+    /// given ID exists.
+    /// Returns [`ContractError::CredentialRevoked`] when the credential has been
+    /// revoked.
+    /// Returns [`ContractError::CredentialExpired`] when the credential's
+    /// `expires_at` timestamp has passed (checked against the ledger clock).
+    pub fn verify_credential(env: Env, credential_id: BytesN<32>) -> Result<(), ContractError> {
         let key = Self::cred_key(&credential_id);
         match env.storage().persistent().get::<_, Credential>(&key) {
-            None => false,
+            None => Err(ContractError::CredentialNotFound),
             Some(cred) => {
                 if cred.revoked {
-                    return false;
+                    return Err(ContractError::CredentialRevoked);
                 }
                 let now = env.ledger().timestamp();
                 if cred.expires_at > 0 && now > cred.expires_at {
-                    return false;
+                    return Err(ContractError::CredentialExpired);
                 }
                 // Bump TTL on read for active, non-expired credentials
                 let ttl = Self::ttl_for_credential(&env, cred.expires_at);
                 env.storage().persistent().extend_ttl(&key, ttl, ttl);
-                true
+                Ok(())
             }
         }
     }
@@ -836,7 +844,7 @@ mod tests {
         client.add_issuer(&issuer);
 
         let cred_id = issue_kyc(&env, &client, &issuer, &subject);
-        assert!(client.verify_credential(&cred_id));
+        client.verify_credential(&cred_id);
     }
 
     #[test]
@@ -848,7 +856,10 @@ mod tests {
 
         let cred_id = issue_kyc(&env, &client, &issuer, &subject);
         client.revoke_credential(&issuer, &cred_id);
-        assert!(!client.verify_credential(&cred_id));
+        assert_eq!(
+            client.try_verify_credential(&cred_id),
+            Err(Ok(ContractError::CredentialRevoked))
+        );
     }
 
     #[test]
@@ -911,11 +922,14 @@ mod tests {
             &expires_at,
         );
 
-        assert!(client.verify_credential(&cred_id));
+        client.verify_credential(&cred_id);
         env.ledger().with_mut(|li| {
             li.timestamp = expires_at + 1;
         });
-        assert!(!client.verify_credential(&cred_id));
+        assert_eq!(
+            client.try_verify_credential(&cred_id),
+            Err(Ok(ContractError::CredentialExpired))
+        );
     }
 
     #[test]
@@ -940,7 +954,7 @@ mod tests {
         );
 
         // Credential should be valid immediately
-        assert!(client.verify_credential(&cred_id));
+        client.verify_credential(&cred_id);
 
         // Advance ledger time past expiry
         env.ledger().with_mut(|li| {
@@ -949,7 +963,10 @@ mod tests {
 
         // Credential should now be invalid - verify_credential uses env.ledger().timestamp(),
         // not any caller-provided value, preventing spoofing of time
-        assert!(!client.verify_credential(&cred_id));
+        assert_eq!(
+            client.try_verify_credential(&cred_id),
+            Err(Ok(ContractError::CredentialExpired))
+        );
     }
 
     #[test]
@@ -1132,7 +1149,7 @@ mod tests {
 
         // Re-issuance after revoke must succeed
         let new_id = issue_kyc(&env, &client, &issuer, &subject);
-        assert!(client.verify_credential(&new_id));
+        client.verify_credential(&new_id);
     }
 
     #[test]
@@ -1159,7 +1176,7 @@ mod tests {
         );
 
         // Credential should still be verifiable (TTL was set)
-        assert!(client.verify_credential(&cred_id));
+        client.verify_credential(&cred_id);
     }
 
     #[test]
@@ -1184,8 +1201,8 @@ mod tests {
         );
 
         // Two consecutive verifies — both should succeed (TTL bumped on first)
-        assert!(client.verify_credential(&cred_id));
-        assert!(client.verify_credential(&cred_id));
+        client.verify_credential(&cred_id);
+        client.verify_credential(&cred_id);
     }
 
     #[test]
@@ -1211,8 +1228,11 @@ mod tests {
 
         client.revoke_credential(&issuer, &cred_id);
 
-        // verify_credential returns false for revoked — no TTL bump
-        assert!(!client.verify_credential(&cred_id));
+        // verify_credential returns CredentialRevoked for revoked — no TTL bump
+        assert_eq!(
+            client.try_verify_credential(&cred_id),
+            Err(Ok(ContractError::CredentialRevoked))
+        );
 
         // get_credential returns CredentialRevoked for revoked entries
         let result = client.try_get_credential(&cred_id);

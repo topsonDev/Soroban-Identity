@@ -37,9 +37,9 @@ import {
 } from "./contract-args";
 
 const PROBE_ADDRESS = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
-const CREDENTIAL_VERIFY_NOT_FOUND_CODE = 2;
 const CREDENTIAL_NOT_FOUND_CODE = 3;
 const CREDENTIAL_REVOKED_CODE = 4;
+const CREDENTIAL_EXPIRED_CODE = 9;
 
 /**
  * Client for the credential-manager contract.
@@ -213,19 +213,33 @@ export class CredentialClient extends BaseClient {
   }
 
   /**
-   * Verify a credential is valid (not revoked, not expired).
+   * Verify a credential and get a typed result describing any failure reason.
    *
-   * Read-only simulation. Returns a discriminated {@link VerifyResult} so
-   * callers can branch on the failure reason without parsing error strings.
+   * Read-only simulation. The contract now returns `Result<(), ContractError>`
+   * so every failure mode is surfaced as a named reason — no secondary
+   * credential fetch is needed.
    *
    * @param callerAddress Stellar address used to build the read simulation.
    * @param credentialId  Hex-encoded credential ID (32 bytes).
    * @param options       Per-call overrides (currently `timeoutSeconds`).
    * @returns `{ valid: true }` when the credential is active and unexpired;
-   *   otherwise `{ valid: false, reason }` where reason is one of
-   *   `not_found`, `revoked`, `expired`, or `unknown`.
+   *   otherwise `{ valid: false, reason? }` where `reason` is one of
+   *   `EXPIRED`, `REVOKED`, `UNKNOWN_ISSUER`, `INVALID_SIGNATURE`, or
+   *   `INACTIVE_SUBJECT` when the contract supplies a typed error code.
    * @throws {SorobanIdentityError} on simulation failure unrelated to a
    *   verification result (network errors, malformed `callerAddress`).
+   *
+   * @example
+   * ```ts
+   * const result = await credentials.verifyCredential(caller, credentialId);
+   * if (!result.valid) {
+   *   switch (result.reason) {
+   *     case 'REVOKED': handleRevoked(); break;
+   *     case 'EXPIRED': handleExpired(); break;
+   *     case 'UNKNOWN_ISSUER': handleUnknownIssuer(); break;
+   *   }
+   * }
+   * ```
    */
   async verifyCredential(
     callerAddress: string,
@@ -257,35 +271,20 @@ export class CredentialClient extends BaseClient {
     if (isSimulationError) {
       const error: string = (result as { error: string }).error ?? "";
       const contractErr = ContractError.extract(error, CREDENTIAL_MANAGER_ERRORS);
-      if (contractErr?.code === CREDENTIAL_VERIFY_NOT_FOUND_CODE) return { valid: false, reason: "not_found" };
-      if (contractErr?.code === CREDENTIAL_REVOKED_CODE) return { valid: false, reason: "revoked" };
-      if (contractErr?.code === 5) return { valid: false, reason: "expired" };
-      if (error.includes("credential not found")) {
-        return { valid: false, reason: "not_found" };
+      if (contractErr?.code === CREDENTIAL_NOT_FOUND_CODE) {
+        return { valid: false, reason: 'UNKNOWN_ISSUER' };
       }
-      return { valid: false, reason: "unknown" };
+      if (contractErr?.code === CREDENTIAL_REVOKED_CODE) {
+        return { valid: false, reason: 'REVOKED' };
+      }
+      if (contractErr?.code === CREDENTIAL_EXPIRED_CODE) {
+        return { valid: false, reason: 'EXPIRED' };
+      }
+      return { valid: false };
     }
 
-    const valid = scValToNative(
-      (result as SorobanRpc.Api.SimulateTransactionSuccessResponse)
-        .result!.retval
-    ) as boolean;
-
-    if (valid) return { valid: true };
-
-    // Contract returned false — fetch the credential to determine why
-    try {
-      const cred = await this.getCredential(callerAddress, credentialId);
-      if (cred.revoked) return { valid: false, reason: "revoked" };
-      if (cred.expiresAt > 0 && Date.now() / 1000 > cred.expiresAt) {
-        return { valid: false, reason: "expired" };
-      }
-    } catch {
-      // getCredential failed — credential likely doesn't exist
-      return { valid: false, reason: "not_found" };
-    }
-
-    return { valid: false, reason: "unknown" };
+    // Contract returned Ok(()) — credential is active and unexpired
+    return { valid: true };
   }
 
   /**
