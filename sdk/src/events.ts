@@ -83,6 +83,152 @@ function parseRawEvent(event: SorobanRpc.Api.EventResponse): ContractEvent | nul
   }
 }
 
+export interface TypedEventFilter {
+  /** Contract address to filter by. */
+  contractId: string;
+  /** Event name (first topic symbol) to match. */
+  eventName: string;
+  /** Optional additional topic filters. */
+  topics?: string[][];
+}
+
+export interface EventsClientOptions {
+  rpcUrl: string;
+  /** Initial ledger to scan from. Defaults to earliest available. */
+  startLedger?: number;
+  /** Max events per page. Defaults to 100. */
+  pageSize?: number;
+  /** Base backoff delay in milliseconds. Defaults to 1000. */
+  baseBackoffMs?: number;
+  /** Maximum backoff delay in milliseconds. Defaults to 30000. */
+  maxBackoffMs?: number;
+}
+
+/**
+ * Typed event client that wraps `getEvents` with:
+ * - Filter by contract ID and event name (first topic symbol)
+ * - Automatic cursor tracking across calls
+ * - Exponential backoff on RPC failures
+ * - Async iterator interface for consuming events in order
+ *
+ * @example
+ * ```ts
+ * const client = new EventsClient({ rpcUrl: 'https://soroban-testnet.stellar.org' });
+ * const filter: TypedEventFilter = { contractId: '...', eventName: 'payment' };
+ *
+ * for await (const event of client.subscribe(filter)) {
+ *   console.log(event.contractId, event.value);
+ * }
+ * ```
+ */
+export class EventsClient {
+  private server: SorobanRpc.Server;
+  private options: Required<Omit<EventsClientOptions, 'startLedger'>> & { startLedger?: number };
+  private cursor: number | undefined;
+
+  constructor(options: EventsClientOptions) {
+    this.server = new SorobanRpc.Server(options.rpcUrl);
+    this.options = {
+      rpcUrl: options.rpcUrl,
+      startLedger: options.startLedger,
+      pageSize: options.pageSize ?? 100,
+      baseBackoffMs: options.baseBackoffMs ?? 1000,
+      maxBackoffMs: options.maxBackoffMs ?? 30_000,
+    };
+    this.cursor = options.startLedger;
+  }
+
+  /**
+   * Fetch the next page of events matching `filter`.
+   *
+   * Advances the internal cursor so subsequent calls page forward without
+   * re-reading already-seen events.
+   *
+   * @param filter Contract and event-name filter.
+   * @returns Array of matching contract events, possibly empty.
+   */
+  async fetchNext(filter: TypedEventFilter): Promise<ContractEvent[]> {
+    const topics = buildTopicsFilterForName(filter.eventName, filter.topics);
+    const response = await this.withBackoff(() =>
+      this.server.getEvents({
+        startLedger: this.cursor,
+        filters: [
+          { type: 'contract', contractIds: [filter.contractId], topics },
+        ],
+        limit: this.options.pageSize,
+      })
+    );
+
+    const events = (response.events ?? [])
+      .map(parseRawEvent)
+      .filter((e): e is ContractEvent => e !== null);
+
+    if (events.length > 0) {
+      this.cursor = Math.max(...events.map((e) => e.ledger)) + 1;
+    }
+
+    return events;
+  }
+
+  /**
+   * Async iterator that continuously polls for new events.
+   *
+   * Yields each event individually. Pauses between polls when there are no
+   * new events (using exponential backoff on repeated empty responses).
+   *
+   * @param filter Contract and event-name filter.
+   * @param pollIntervalMs Milliseconds to wait between polls when idle.
+   */
+  async *subscribe(
+    filter: TypedEventFilter,
+    pollIntervalMs = 5000
+  ): AsyncGenerator<ContractEvent> {
+    let idleMs = pollIntervalMs;
+    while (true) {
+      const events = await this.fetchNext(filter).catch(() => [] as ContractEvent[]);
+      if (events.length > 0) {
+        idleMs = pollIntervalMs;
+        for (const event of events) {
+          yield event;
+        }
+      } else {
+        await sleep(idleMs);
+        idleMs = Math.min(idleMs * 1.5, this.options.maxBackoffMs);
+      }
+    }
+  }
+
+  /** Reset the cursor to re-scan from `ledger` (or the beginning if omitted). */
+  resetCursor(ledger?: number): void {
+    this.cursor = ledger;
+  }
+
+  private async withBackoff<T>(fn: () => Promise<T>): Promise<T> {
+    let delay = this.options.baseBackoffMs;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        if (attempt >= 4) throw err;
+        await sleep(delay);
+        delay = Math.min(delay * 2, this.options.maxBackoffMs);
+      }
+    }
+  }
+}
+
+function buildTopicsFilterForName(
+  eventName: string,
+  extra?: string[][]
+): string[][] {
+  const nameTopic = [eventName];
+  return extra ? [nameTopic, ...extra] : [nameTopic];
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class SorobanEventListener {
   private server: SorobanRpc.Server;
   private contractId: string;
