@@ -21,7 +21,7 @@ import type {
   WriteResult,
 } from "./types";
 import { validateConfig } from "./types";
-import { retryWithBackoff, validateStellarAddress, pollTransactionStatus } from "./utils";
+import { retryWithBackoff, validateStellarAddress, pollTransactionStatus, runConcurrent } from "./utils";
 import { ContractError, SorobanIdentityError } from "./errors";
 import { CREDENTIAL_MANAGER_ERRORS } from "./error-codes";
 import { BaseClient } from "./base-client";
@@ -97,6 +97,83 @@ export class CredentialClient extends BaseClient {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Parameters accepted by {@link CredentialClient.issueCredential} and
+   * {@link CredentialClient.estimateIssuanceFee}.
+   */
+  // Defined here (not in types.ts) to keep the Keypair import local to this file.
+  // Re-exported via index.ts as `IssueCredentialParams`.
+
+  /**
+   * Estimate the XLM fee for issuing a credential without signing or submitting.
+   *
+   * Runs the Soroban simulation step only — identical to the first half of
+   * {@link CredentialClient.issueCredential} — and returns the resource fee
+   * straight from the simulation response. No transaction is signed or broadcast.
+   *
+   * Useful for showing fee previews in UIs before asking users to approve a
+   * transaction.
+   *
+   * @param issuerKeypair   The registered issuer keypair (public key used for args).
+   * @param subjectAddress  The Stellar address that would receive the credential.
+   * @param credentialType  Credential category — see {@link CredentialType}.
+   * @param claims          Arbitrary `string → string` claims to embed.
+   * @param claimsHashHex   64-char hex (32 bytes) SHA-256 of the off-chain claims.
+   * @param expiresAt       Unix timestamp (seconds) or `0` for no expiry.
+   * @param options         Per-call overrides (currently `timeoutSeconds`).
+   * @returns `{ fee: string, feeXLM: string }` where `fee` is stroops and
+   *          `feeXLM` is the human-readable XLM amount.
+   * @throws {SorobanIdentityError} with code `VALIDATION_ERROR` if
+   *   `claimsHashHex` is malformed, or `CONTRACT_ERROR` if simulation fails.
+   */
+  async estimateIssuanceFee(
+    issuerKeypair: Keypair,
+    subjectAddress: string,
+    credentialType: CredentialType,
+    claims: Record<string, string>,
+    claimsHashHex: string,
+    expiresAt = 0,
+    options?: CallOptions
+  ): Promise<{ fee: string; feeXLM: string }> {
+    if (!/^[0-9a-fA-F]{64}$/.test(claimsHashHex)) {
+      throw new SorobanIdentityError(
+        "InvalidClaimsHashFormat: claimsHash must be a 64-character hex string (32 bytes)",
+        "VALIDATION_ERROR"
+      );
+    }
+
+    const account = await this.server.getAccount(issuerKeypair.publicKey());
+    const timeout = options?.timeoutSeconds ?? this.config.txTimeout ?? 30;
+    // Use a dummy 64-byte signature — simulation does not validate auth signatures.
+    const dummySignature = Buffer.alloc(64);
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(
+        this.contract.call(
+          "issue_credential",
+          ...buildIssueCredentialArgs({
+            issuer: issuerKeypair.publicKey(),
+            subject: subjectAddress,
+            credentialType,
+            claims,
+            claimsHash: Buffer.from(claimsHashHex, "hex"),
+            signature: dummySignature,
+            expiresAt,
+          })
+        )
+      )
+      .setTimeout(timeout)
+      .build();
+
+    const prepared = await retryWithBackoff(() => this.server.prepareTransaction(tx));
+    const feeStroops = prepared.fee;
+    const feeXLM = (parseInt(feeStroops, 10) / 10_000_000).toFixed(7);
+    return { fee: feeStroops, feeXLM };
   }
 
   /**
@@ -469,6 +546,9 @@ export class CredentialClient extends BaseClient {
    * Convenience wrapper around {@link CredentialClient.verifyCredential} that
    * issues all simulations concurrently.
    *
+   * @deprecated Use {@link CredentialClient.verifyMany} instead, which accepts
+   *   the same arguments and adds a configurable concurrency limit.
+   *
    * @param callerAddress Stellar address used to build the read simulations.
    * @param credentialIds Hex-encoded credential IDs (32 bytes each).
    * @param options       Per-call overrides (applied to each underlying call).
@@ -485,6 +565,35 @@ export class CredentialClient extends BaseClient {
     validateStellarAddress(callerAddress);
     return Promise.all(
       credentialIds.map((id) => this.verifyCredential(callerAddress, id, options))
+    );
+  }
+
+  /**
+   * Verify multiple credentials in parallel.
+   *
+   * Runs up to `concurrency` (default: `config.maxConcurrentRequests ?? 5`)
+   * simulate calls simultaneously. Results are returned in the same order as
+   * `credentialIds`.
+   *
+   * Prefer this over the older {@link CredentialClient.verifyCredentialsBatch}
+   * when you want an explicit concurrency cap for leaderboard or bulk workflows.
+   *
+   * @param callerAddress  Stellar address used to build the read simulations.
+   * @param credentialIds  Hex-encoded credential IDs (32 bytes each).
+   * @param options        Per-call overrides; `concurrency` caps parallel RPC calls.
+   * @returns Array of {@link VerifyResult} in input order.
+   */
+  async verifyMany(
+    callerAddress: string,
+    credentialIds: string[],
+    options?: CallOptions & { concurrency?: number }
+  ): Promise<VerifyResult[]> {
+    validateStellarAddress(callerAddress);
+    const concurrency = options?.concurrency ?? this.config.maxConcurrentRequests ?? 5;
+    return runConcurrent(
+      credentialIds,
+      (id) => this.verifyCredential(callerAddress, id, options),
+      concurrency
     );
   }
 

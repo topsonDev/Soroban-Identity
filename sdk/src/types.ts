@@ -1,6 +1,24 @@
 import { StrKey } from "@stellar/stellar-sdk";
 
 /**
+ * W3C DID Core service endpoint embedded in a {@link DidDocument}.
+ *
+ * Mirrors the Rust `ServiceEndpoint` contracttype from the identity-registry.
+ * Note: the Soroban field is named `type_` (reserved keyword in Rust); this
+ * interface follows the same serialisation name.
+ *
+ * @see https://www.w3.org/TR/did-core/#services
+ */
+export interface ServiceEndpoint {
+  /** URI identifying this endpoint (e.g. `did:stellar:…#messaging`). */
+  id: string;
+  /** Service type (e.g. `DIDCommMessaging`, `CredentialService`). */
+  type_: string;
+  /** URL or URI where the service can be reached. */
+  service_endpoint: string;
+}
+
+/**
  * Decentralised identifier document as stored by the identity-registry contract.
  *
  * `id` follows the `did:stellar:<address>` form. `metadata` is a free-form
@@ -20,6 +38,11 @@ export interface DidDocument {
   updatedAt: number;
   /** `false` once `deactivateDid` has been called for this DID. */
   active: boolean;
+  /**
+   * Optional W3C DID Core service endpoints.
+   * Empty array by default; updated via the identity-registry admin flow.
+   */
+  services: ServiceEndpoint[];
 }
 
 /**
@@ -79,6 +102,14 @@ export interface SorobanIdentityConfig {
   retryDelay?: number;
   /** Optional pluggable logger for RPC simulation/submission traces. */
   logger?: SorobanIdentityLogger;
+  /**
+   * Expected contract deployment version string (e.g. `"0.1.0"`).
+   *
+   * When set and it does not match the SDK's own version constant the SDK
+   * emits a `warn` log at construction time so operators can catch
+   * contract/SDK mismatches before they cause runtime failures.
+   */
+  version?: string;
 }
 
 /** Per-call options that override the global config. */
